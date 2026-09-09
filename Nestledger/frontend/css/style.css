@@ -725,3 +725,27 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .export-actions button,.list-controls .export-actions button{display:inline-flex;align-items:center;gap:5px;width:auto;padding:8px 10px;font-size:.78rem}
 .export-actions svg{width:14px;height:14px}
 @media(max-width:760px){.list-controls{flex-wrap:wrap}.export-actions{width:100%;margin-left:0}.export-actions span{margin-right:auto}}
+
+/* Resident detail: keep payment actions compact and readable. */
+.detail-actions{display:flex;justify-content:flex-end;gap:8px;margin:0 0 14px}
+.detail-payment-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.detail-payment-actions .secondary{display:inline-flex;align-items:center;gap:6px;width:auto;padding:7px 10px}
+.detail-payment-actions svg,.detail-actions svg{width:15px;height:15px}
+@media (max-width:700px){.detail-payment-actions{align-items:flex-end;flex-direction:column;gap:5px}.detail-payment-actions strong{font-size:14px}}
+/* Vendor workspace cleanup: keep the page title as the single heading and give the green summary a stable two-column layout. */
+.topbar.vendor-topbar{min-height:42px;margin-bottom:24px;}
+.topbar.vendor-topbar .topbar-copy{display:none;}
+.vendor-page-title{text-align:center;}
+.vendor-page-title h2{margin-bottom:4px;}
+.vendor-page-title p{margin-inline:auto;}
+.vendor-hero{display:grid;grid-template-columns:minmax(0,1fr) 190px;align-items:center;gap:36px;min-height:210px;padding:34px 42px;}
+.vendor-hero-main{text-align:center;min-width:0;}
+.vendor-hero-main .eyebrow{font-family:'DM Sans',sans-serif;letter-spacing:2px;font-size:10px;opacity:.72;}
+.vendor-hero-main h2{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400;font-size:42px;line-height:1;margin:10px 0 8px;}
+.vendor-hero-main p{margin:0;color:#d6e2d9;}
+.vendor-hero-side{border-left:1px solid rgba(255,255,255,.22);padding-left:34px;text-align:center;min-width:0;}
+.vendor-hero-side small{display:block;font-family:'DM Sans',sans-serif;letter-spacing:1.5px;font-size:10px;opacity:.72;}
+.vendor-hero-side b{display:block;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400;font-size:42px;line-height:1.1;margin:7px 0 5px;}
+.vendor-hero-side span{display:block;font-family:Georgia,'Times New Roman',serif;font-size:12px;color:#d6e2d9;line-height:1.4;}
+@media(max-width:700px){.vendor-hero{grid-template-columns:1fr;gap:20px;padding:28px 22px;}.vendor-hero-side{border-left:0;border-top:1px solid rgba(255,255,255,.22);padding:18px 0 0;}.vendor-hero-main h2,.vendor-hero-side b{font-size:36px;}}
+

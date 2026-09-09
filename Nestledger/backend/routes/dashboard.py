@@ -11,6 +11,7 @@ from models.payment import MaintenanceBill, Payment
 from models.user import User
 from models.vendor import Vendor
 from models.work_order import WorkOrder
+from models.quotation import Quotation
 from utils.validators import REQUEST_CATEGORY_TO_JOB
 from services.finance import admin_summary, resident_summary
 from services.operations import complaint_counts, open_work_orders_count
@@ -87,7 +88,7 @@ def dashboard():
         open_jobs = (
             WorkOrder.query.filter(
                 WorkOrder.status == "open",
-                WorkOrder.category.in_(allowed_categories),
+                db.func.lower(WorkOrder.category).in_([x.lower() for x in allowed_categories]),
             )
             .order_by(WorkOrder.id.desc())
             .limit(3)
@@ -98,11 +99,25 @@ def dashboard():
         open_jobs_count = (
             WorkOrder.query.filter(
                 WorkOrder.status == "open",
-                WorkOrder.category.in_(allowed_categories),
+                db.func.lower(WorkOrder.category).in_([x.lower() for x in allowed_categories]),
             ).count()
             if allowed_categories
             else 0
         )
+
+        if profile:
+            vendor_order_q = WorkOrder.query.filter(WorkOrder.vendor_id == profile.id)
+            pending_quotes = Quotation.query.filter_by(vendor_id=profile.id, status="pending").count()
+            completed_jobs = vendor_order_q.filter(WorkOrder.status == "completed").count()
+            paid_work_orders = db.session.query(Payment.work_order_id).filter(
+                Payment.status == "paid", Payment.work_order_id.isnot(None)
+            )
+            unpaid_jobs = vendor_order_q.filter(
+                WorkOrder.status.in_(("accepted", "in_progress", "completed")),
+                ~WorkOrder.id.in_(paid_work_orders),
+            ).count()
+        else:
+            pending_quotes = completed_jobs = unpaid_jobs = 0
 
         return {
             "role": "vendor",
@@ -111,6 +126,9 @@ def dashboard():
             "work_orders": [w.to_dict() for w in orders],
             "open_jobs_count": open_jobs_count,
             "open_jobs": [w.to_dict() for w in open_jobs],
+            "pending_quotes": pending_quotes,
+            "completed_jobs": completed_jobs,
+            "unpaid_jobs": unpaid_jobs,
         }
 
     finance = admin_summary()

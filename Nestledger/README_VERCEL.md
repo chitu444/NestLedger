@@ -21,33 +21,3 @@
 The Flask application is exported as `app` from `api/index.py`. The frontend is served by Flask and API routes remain under `/api/...`.
 
 Use PostgreSQL in production. Do not rely on the local SQLite database on Vercel.
-
-## Production migration + verification
-
-The release includes an explicit migration runner and a post-deployment smoke verifier.
-
-### 1. Run migrations against production PostgreSQL
-
-From the repository root, using the production `DATABASE_URL` and normal production environment variables:
-
-```bash
-python scripts/migrate.py status
-python scripts/migrate.py migrate
-python scripts/migrate.py status
-```
-
-The runner is safe to repeat. PostgreSQL migrations are serialized with a transaction-scoped advisory lock, and applied versions are recorded in `schema_migrations`.
-
-### 2. Deploy the same commit to Vercel
-
-Deploy only after the migration command reports the latest version as applied. In production, schema creation, migrations, and admin seeding are disabled at function startup by default. Run the migration runner explicitly before deployment. The health probe then verifies that the expected migration version is present.
-
-### 3. Verify the live deployment
-
-```bash
-python scripts/verify_production.py https://YOUR-DEPLOYMENT.vercel.app
-```
-
-Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the shell environment if you want the verifier to also test admin login and a real resident CSV export. Credentials are never accepted as command-line arguments.
-
-The health probe returns `503` while migrations are pending, so an incomplete schema cannot silently present itself as ready.

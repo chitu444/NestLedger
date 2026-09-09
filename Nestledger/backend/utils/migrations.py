@@ -5,7 +5,6 @@ engines supported by the app. New deployments still create the current schema fi
 these migrations are for safely upgrading older databases.
 """
 from sqlalchemy import inspect, text
-from sqlalchemy.exc import SQLAlchemyError
 
 from models.db import db
 
@@ -67,50 +66,15 @@ def _migration_2_query_indexes():
             db.session.execute(text(statement))
 
 
-def migration_status():
-    """Return applied and pending migration metadata without changing the schema."""
-    _ensure_table()
-    applied_rows = db.session.execute(
-        text("SELECT version, name, applied_at FROM schema_migrations ORDER BY version")
-    ).mappings().all()
-    applied = {row["version"] for row in applied_rows}
-    pending = [
-        {"version": version, "name": name}
-        for version, name, _ in MIGRATIONS
-        if version not in applied
-    ]
-    return {
-        "applied": [dict(row) for row in applied_rows],
-        "pending": pending,
-        "current": max(applied, default=0),
-        "latest": max((version for version, _, _ in MIGRATIONS), default=0),
-    }
-
-
-def _migration_lock():
-    """Serialize migration execution on PostgreSQL; SQLite relies on its DB lock."""
-    if db.engine.dialect.name == "postgresql":
-        db.session.execute(text("SELECT pg_advisory_xact_lock(8473921)"))
-
-
 def run_migrations():
-    """Apply all pending additive migrations exactly once."""
     _ensure_table()
-    _migration_lock()
-    applied = {row[0] for row in db.session.execute(
-        text("SELECT version FROM schema_migrations ORDER BY version")
-    ).all()}
+    applied = {row[0] for row in db.session.execute(text("SELECT version FROM schema_migrations")).all()}
     for version, name, fn_name in MIGRATIONS:
         if version in applied:
             continue
-        try:
-            globals()[fn_name]()
-            db.session.execute(
-                text("INSERT INTO schema_migrations (version, name, applied_at) VALUES (:v, :n, CURRENT_TIMESTAMP)"),
-                {"v": version, "n": name},
-            )
-            db.session.commit()
-        except SQLAlchemyError:
-            db.session.rollback()
-            raise
-    return migration_status()
+        globals()[fn_name]()
+        db.session.execute(
+            text("INSERT INTO schema_migrations (version, name, applied_at) VALUES (:v, :n, CURRENT_TIMESTAMP)"),
+            {"v": version, "n": name},
+        )
+        db.session.commit()

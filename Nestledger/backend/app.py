@@ -3,10 +3,9 @@ from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, request, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-from sqlalchemy import text
 
 from models.db import db
 from models.user import User
@@ -124,34 +123,9 @@ def seed_admin() -> None:
 
 with app.app_context():
     (BASE_DIR / "database").mkdir(parents=True, exist_ok=True)
-    create_all_default = "0" if app_env == "production" else "1"
-    migrations_default = "0" if app_env == "production" else "1"
-    seed_default = "0" if app_env == "production" else "1"
-    if os.getenv("RUN_DB_CREATE_ALL_ON_STARTUP", create_all_default).lower() not in {"0", "false", "no"}:
-        db.create_all()
-    if os.getenv("RUN_MIGRATIONS_ON_STARTUP", migrations_default).lower() not in {"0", "false", "no"}:
-        run_migrations()
-    if os.getenv("RUN_ADMIN_SEED_ON_STARTUP", seed_default).lower() not in {"0", "false", "no"}:
-        seed_admin()
-
-
-@app.get("/api/health")
-def health():
-    """Small production readiness probe; does not expose credentials or user data."""
-    from utils.migrations import migration_status
-    try:
-        db.session.execute(text("SELECT 1"))
-        migrations = migration_status()
-        ready = not migrations["pending"]
-        return jsonify({
-            "status": "ok" if ready else "degraded",
-            "database": "ok",
-            "migrations": {"current": migrations["current"], "latest": migrations["latest"], "pending": len(migrations["pending"])},
-            "environment": app_env,
-        }), 200 if ready else 503
-    except Exception:
-        db.session.rollback()
-        return jsonify({"status": "error", "database": "unavailable"}), 503
+    db.create_all()
+    run_migrations()
+    seed_admin()
 
 
 @app.after_request
@@ -207,7 +181,7 @@ def home():
 
 
 @app.get("/health")
-def basic_health():
+def health():
     return {"status": "ok"}
 
 

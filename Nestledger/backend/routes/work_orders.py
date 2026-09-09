@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from flask import Blueprint, request
+from sqlalchemy import select
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user
 
@@ -35,6 +36,14 @@ def category_job(category: str):
     return REQUEST_CATEGORY_TO_JOB.get((category or "").strip().lower())
 
 
+def canonical_category(category: str):
+    value = (category or "").strip().lower()
+    for label, job in REQUEST_CATEGORY_TO_JOB.items():
+        if label == value:
+            return label.title()
+    return (category or "").strip()
+
+
 def vendor_matches_order(vendor: Vendor, order: WorkOrder) -> bool:
     required_job = category_job(order.category)
     return required_job is not None and (vendor.service or "").strip().lower() == required_job
@@ -64,7 +73,7 @@ def list_orders():
         matching_labels = [c.title() for c in matching_categories]
         query = WorkOrder.query.filter(
             db.or_(
-                db.and_(WorkOrder.status == "open", WorkOrder.category.in_(matching_labels)),
+                db.and_(WorkOrder.status == "open", db.func.lower(WorkOrder.category).in_([x.lower() for x in matching_labels])),
                 WorkOrder.vendor_id == profile.id,
             )
         )
@@ -127,7 +136,7 @@ def create_order():
 
     order = WorkOrder(
         title=title,
-        category=category[:80],
+        category=canonical_category(category)[:80],
         description=str(data.get("description") or "").strip() or None,
         amount=amount,
         due_date=str(data.get("due_date") or "").strip() or None,
@@ -152,6 +161,8 @@ def create_order():
             vendor = db.session.get(Vendor, int(vendor_id))
             if vendor is None:
                 return {"error": "Invalid vendor"}, 400
+            if vendor.status != "active":
+                return {"error": "Selected vendor is inactive"}, 409
             if not vendor_matches_order(vendor, order):
                 return {"error": "Selected vendor job title does not match this request category"}, 400
             order.vendor_id = vendor.id
@@ -192,7 +203,9 @@ def accept_order(wid):
     if profile is None:
         return {"error": "No vendor profile found for this account"}, 400
 
-    order = db.session.get(WorkOrder, wid)
+    order = db.session.execute(
+        select(WorkOrder).where(WorkOrder.id == wid).with_for_update()
+    ).scalar_one_or_none()
     if order is None:
         return {"error": "Work order not found"}, 404
     if order.status != "open" or order.vendor_id is not None:
@@ -238,8 +251,8 @@ def withdraw_order(wid):
         return {"error": "Work order not found"}, 404
     if order.vendor_id != profile.id:
         return {"error": "You can only withdraw from jobs assigned to you"}, 403
-    if order.status not in {"accepted", "in_progress"}:
-        return {"error": "Only accepted or in-progress jobs can be withdrawn from"}, 400
+    if order.status != "accepted":
+        return {"error": "A job can only be withdrawn before work starts. Contact an administrator if work is already in progress."}, 400
 
     order.vendor_id = None
     order.status = "open"
@@ -445,7 +458,9 @@ def accept_quote(wid, qid):
     if user is None:
         return {"error": "User not found"}, 404
 
-    order = db.session.get(WorkOrder, wid)
+    order = db.session.execute(
+        select(WorkOrder).where(WorkOrder.id == wid).with_for_update()
+    ).scalar_one_or_none()
     if order is None:
         return {"error": "Work order not found"}, 404
 
