@@ -5,6 +5,7 @@ import urllib.request
 
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from utils.auth import current_user
 from sqlalchemy import func
 
 from models.complaint import Complaint
@@ -37,7 +38,7 @@ DEFAULT_MODEL = "gemini-2.5-flash"
 
 def _current_user():
     try:
-        return db.session.get(User, int(get_jwt_identity()))
+        return current_user()
     except (TypeError, ValueError):
         return None
 
@@ -55,40 +56,49 @@ def _authorized_context(user):
     ]
 
     if user.role == "resident":
-        bills = MaintenanceBill.query.filter_by(user_id=user.id).order_by(MaintenanceBill.id.desc()).all()
-        pending = [b for b in bills if b.status != "paid"]
-        paid = [b for b in bills if b.status == "paid"]
-        payments = Payment.query.filter_by(user_id=user.id, status="paid").order_by(Payment.id.desc()).all()
-        complaints = Complaint.query.filter_by(user_id=user.id).order_by(Complaint.id.desc()).all()
-        work_orders = WorkOrder.query.filter_by(resident_id=user.id).order_by(WorkOrder.id.desc()).all()
+        pending = MaintenanceBill.query.filter_by(user_id=user.id).filter(MaintenanceBill.status != "paid").order_by(MaintenanceBill.id.desc()).limit(5).all()
+        pending_count = MaintenanceBill.query.filter_by(user_id=user.id).filter(MaintenanceBill.status != "paid").count()
+        paid_count = MaintenanceBill.query.filter_by(user_id=user.id, status="paid").count()
+        due_total = float(db.session.query(func.coalesce(func.sum(MaintenanceBill.amount), 0)).filter(MaintenanceBill.user_id == user.id, MaintenanceBill.status != "paid").scalar() or 0)
+        complaints = Complaint.query.filter_by(user_id=user.id).order_by(Complaint.id.desc()).limit(5).all()
+        complaint_count = Complaint.query.filter_by(user_id=user.id).count()
+        work_orders = WorkOrder.query.filter_by(resident_id=user.id).order_by(WorkOrder.id.desc()).limit(5).all()
+        work_order_count = WorkOrder.query.filter_by(resident_id=user.id).count()
 
         lines += [
             "Resident financial details:",
-            f"Total outstanding maintenance dues: {_money(sum(b.amount for b in pending))}",
-            f"Pending bills: {len(pending)}",
-            f"Paid bills: {len(paid)}",
+            f"Total outstanding maintenance dues: {_money(due_total)}",
+            f"Pending bills: {pending_count}",
+            f"Paid bills: {paid_count}",
         ]
-        for bill in pending[:5]:
+        for bill in pending:
             lines.append(f"Pending bill: {bill.month}; amount {_money(bill.amount)}; due {bill.due_date}; status {bill.status}")
-        lines.append(f"Paid payments count: {len(payments)}")
-        lines.append(f"Resident complaints count: {len(complaints)}")
-        for item in complaints[:5]:
+        lines.append(f"Paid payments count: {Payment.query.filter_by(user_id=user.id, status='paid').count()}")
+        lines.append(f"Resident complaints count: {complaint_count}")
+        for item in complaints:
             lines.append(f"Complaint #{item.id}: {item.subject}; category {item.category}; status {item.status}")
-        lines.append(f"Resident work orders count: {len(work_orders)}")
-        for item in work_orders[:5]:
+        lines.append(f"Resident work orders count: {work_order_count}")
+        for item in work_orders:
             lines.append(f"Work order #{item.id}: {item.title}; status {item.status}; amount {_money(item.amount)}")
 
     elif user.role == "vendor":
-        profile = Vendor.query.filter_by(user_id=user.id).first()
-        assigned = WorkOrder.query.filter_by(vendor_id=profile.id).order_by(WorkOrder.id.desc()).all() if profile else []
-        open_jobs = WorkOrder.query.filter_by(status="open").order_by(WorkOrder.id.desc()).limit(5).all()
+        profile = Vendor.query.filter_by(user_id=user.id, status="active").first()
+        assigned = WorkOrder.query.filter_by(vendor_id=profile.id).order_by(WorkOrder.id.desc()).limit(5).all() if profile else []
+        assigned_count = WorkOrder.query.filter_by(vendor_id=profile.id).count() if profile else 0
+        active_count = WorkOrder.query.filter(WorkOrder.vendor_id == profile.id, WorkOrder.status.in_(("accepted", "in_progress"))).count() if profile else 0
+        allowed_categories = []
+        if profile:
+            from utils.validators import REQUEST_CATEGORY_TO_JOB
+            service=(profile.service or '').strip().lower()
+            allowed_categories=[c.title() for c,j in REQUEST_CATEGORY_TO_JOB.items() if j==service]
+        open_jobs = WorkOrder.query.filter(WorkOrder.status == "open", WorkOrder.category.in_(allowed_categories)).order_by(WorkOrder.id.desc()).limit(5).all() if allowed_categories else []
         lines += [
             "Vendor profile:",
             f"Service: {profile.service if profile else 'General Services'}",
-            f"Assigned jobs: {len(assigned)}",
-            f"Active assigned jobs: {sum(w.status in {'accepted', 'in_progress'} for w in assigned)}",
+            f"Assigned jobs: {assigned_count}",
+            f"Active assigned jobs: {active_count}",
         ]
-        for item in assigned[:5]:
+        for item in assigned:
             lines.append(f"Assigned work order #{item.id}: {item.title}; status {item.status}; amount {_money(item.amount)}")
         lines.append(f"Open jobs visible on board: {len(open_jobs)}")
 

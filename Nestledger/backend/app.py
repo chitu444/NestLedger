@@ -1,10 +1,12 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from sqlalchemy import text
 
 from models.db import db
 from models.user import User
@@ -56,19 +58,31 @@ if app_env == "production" and (
 ):
     raise RuntimeError("Set SECRET_KEY and JWT_SECRET_KEY before production deployment.")
 
+if app_env == "production" and (
+    not os.getenv("ADMIN_EMAIL", "").strip()
+    or not os.getenv("ADMIN_PASSWORD", "")
+):
+    raise RuntimeError("Set ADMIN_EMAIL and ADMIN_PASSWORD before production deployment.")
+
 app.config.update(
     SECRET_KEY=secret_key,
     JWT_SECRET_KEY=jwt_secret_key,
     SQLALCHEMY_DATABASE_URI=database_url(),
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
+    MAX_CONTENT_LENGTH=1 * 1024 * 1024,
+    JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=4),
+    JWT_DECODE_LEEWAY=10,
     RAZORPAY_KEY_ID=os.getenv("RAZORPAY_KEY_ID", ""),
     RAZORPAY_KEY_SECRET=os.getenv("RAZORPAY_KEY_SECRET", ""),
     RAZORPAY_WEBHOOK_SECRET=os.getenv("RAZORPAY_WEBHOOK_SECRET", ""),
 )
 
-# Optional CORS for a separately hosted frontend.
-cors_origins = os.getenv("CORS_ORIGINS", "*")
-CORS(app, origins=[x.strip() for x in cors_origins.split(",")] if cors_origins != "*" else "*")
+# CORS is opt-in. Same-origin Vercel/Flask deployments do not need it.
+cors_origins = os.getenv("CORS_ORIGINS", "").strip()
+if cors_origins:
+    CORS(app, origins=[x.strip() for x in cors_origins.split(",") if x.strip()],
+         supports_credentials=False, max_age=86400)
 db.init_app(app)
 JWTManager(app)
 
@@ -89,40 +103,7 @@ for blueprint in (
     app.register_blueprint(blueprint, url_prefix="/api")
 
 
-def run_safe_migrations() -> None:
-    """Apply additive schema upgrades for existing databases.
-
-    ``create_all`` creates missing tables but does not add new columns to an
-    existing table. Keep migrations additive so an existing deployment can be
-    upgraded without deleting its data.
-    """
-    from sqlalchemy import inspect, text
-
-    inspector = inspect(db.engine)
-    existing_tables = set(inspector.get_table_names())
-
-    if "complaint" in existing_tables:
-        complaint_columns = {c["name"] for c in inspector.get_columns("complaint")}
-        if "updated_at" not in complaint_columns:
-            db.session.execute(text("ALTER TABLE complaint ADD COLUMN updated_at TIMESTAMP"))
-            db.session.execute(text("UPDATE complaint SET updated_at = created_at"))
-
-    # Older NestLedger databases have a vendor table without user_id.  The
-    # column is required to link admin-created vendors to their login account.
-    if "vendor" in existing_tables:
-        vendor_columns = {c["name"] for c in inspector.get_columns("vendor")}
-        if "user_id" not in vendor_columns:
-            db.session.execute(text("ALTER TABLE vendor ADD COLUMN user_id INTEGER"))
-            db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_vendor_user_id ON vendor (user_id)"))
-
-    if "maintenance_bill" in existing_tables:
-        bill_columns = {c["name"] for c in inspector.get_columns("maintenance_bill")}
-        if "assigned_by_id" not in bill_columns:
-            db.session.execute(text("ALTER TABLE maintenance_bill ADD COLUMN assigned_by_id INTEGER"))
-            db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_maintenance_bill_assigned_by_id ON maintenance_bill (assigned_by_id)"))
-
-    db.session.commit()
-
+from utils.migrations import run_migrations
 
 def seed_admin() -> None:
     """Create the demo/admin account only when it does not already exist."""
@@ -143,9 +124,78 @@ def seed_admin() -> None:
 
 with app.app_context():
     (BASE_DIR / "database").mkdir(parents=True, exist_ok=True)
-    db.create_all()
-    run_safe_migrations()
-    seed_admin()
+    if os.getenv("RUN_DB_CREATE_ALL_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
+        db.create_all()
+    if os.getenv("RUN_MIGRATIONS_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
+        run_migrations()
+    if os.getenv("RUN_ADMIN_SEED_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
+        seed_admin()
+
+
+@app.get("/api/health")
+def health():
+    """Small production readiness probe; does not expose credentials or user data."""
+    from utils.migrations import migration_status
+    try:
+        db.session.execute(text("SELECT 1"))
+        migrations = migration_status()
+        ready = not migrations["pending"]
+        return jsonify({
+            "status": "ok" if ready else "degraded",
+            "database": "ok",
+            "migrations": {"current": migrations["current"], "latest": migrations["latest"], "pending": len(migrations["pending"])},
+            "environment": app_env,
+        }), 200 if ready else 503
+    except Exception:
+        db.session.rollback()
+        return jsonify({"status": "error", "database": "unavailable"}), 503
+
+
+@app.after_request
+def security_and_cache_headers(response):
+    """Apply small, deployment-safe HTTP hardening and static caching."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), payment=(self), usb=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://unpkg.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob:; connect-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://generativelanguage.googleapis.com; "
+        "frame-src https://api.razorpay.com https://checkout.razorpay.com; object-src 'none'; base-uri 'self'; form-action 'self'"
+    )
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    elif response.content_type and (response.content_type.startswith("text/css") or response.content_type.startswith("application/javascript")):
+        response.headers.setdefault("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400")
+    return response
+
+
+@app.errorhandler(400)
+def bad_request(error):
+    if request.path.startswith("/api/"):
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "The request could not be processed."}}, 400
+    return error
+
+
+@app.errorhandler(404)
+def not_found(error):
+    if request.path.startswith("/api/"):
+        return {"ok": False, "error": {"code": "NOT_FOUND", "message": "The requested resource was not found."}}, 404
+    return send_from_directory(app.static_folder, "index.html")
+
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    if request.path.startswith("/api/"):
+        return {"ok": False, "error": {"code": "METHOD_NOT_ALLOWED", "message": "This method is not allowed for the requested resource."}}, 405
+    return error
+
+
+@app.errorhandler(413)
+def request_too_large(error):
+    return ({"ok": False, "error": {"code": "PAYLOAD_TOO_LARGE", "message": "The request body is too large."}}, 413)
 
 
 @app.get("/")
@@ -156,6 +206,11 @@ def home():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/<path:missing>")
+def api_not_found(missing: str):
+    return {"error": "API endpoint not found"}, 404
 
 
 @app.get("/<path:path>")

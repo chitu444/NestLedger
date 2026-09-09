@@ -1,16 +1,15 @@
 from flask import Blueprint
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from utils.auth import current_user
 
 from models.db import db
 from models.notification import Notification
 from models.user import User
+from utils.pagination import paginate_query
 
 
 notifications_bp = Blueprint("notifications", __name__)
 
-
-def current_user():
-    return db.session.get(User, int(get_jwt_identity()))
 
 
 @notifications_bp.get("/notifications")
@@ -20,18 +19,10 @@ def list_notifications():
     if user is None:
         return {"error": "User not found"}, 404
 
-    items = (
-        Notification.query.filter_by(user_id=user.id)
-        .order_by(Notification.id.desc())
-        .limit(50)
-        .all()
-    )
+    query = Notification.query.filter_by(user_id=user.id)
+    items, meta = paginate_query(query.order_by(Notification.id.desc()), default=30, maximum=50)
     unread = Notification.query.filter_by(user_id=user.id, is_read=False).count()
-
-    return {
-        "notifications": [n.to_dict() for n in items],
-        "unread_count": unread,
-    }
+    return {"notifications": [n.to_dict() for n in items], "unread_count": unread, "meta": meta}
 
 
 @notifications_bp.patch("/notifications/<int:nid>/read")

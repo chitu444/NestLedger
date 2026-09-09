@@ -9,3 +9,4 @@ from models.notice import Notice
 from models.notification import Notification
 from models.quotation import Quotation
 from models.rating import Rating
+from models.audit_log import AuditLog

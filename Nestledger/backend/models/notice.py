@@ -11,7 +11,7 @@ class Notice(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    author = db.relationship("User")
+    author = db.relationship("User", lazy="joined")
 
     def to_dict(self):
         return {

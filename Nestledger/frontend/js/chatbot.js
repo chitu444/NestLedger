@@ -125,7 +125,7 @@
     fab.className = 'chatbot-fab';
     fab.type = 'button';
     fab.setAttribute('aria-label', 'Open AI Chatbot');
-    fab.innerHTML = `<span class="chatbot-fab-icon">✨</span><span class="chatbot-fab-label">${escapeHtml(fabLabel)}</span>`;
+    fab.innerHTML = `<span class="chatbot-fab-icon"><i data-lucide="sparkles"></i></span><span class="chatbot-fab-label">${escapeHtml(fabLabel)}</span>`;
     fab.onclick = toggleChatbot;
     document.body.appendChild(fab);
 
@@ -143,8 +143,8 @@
           </div>
         </div>
         <div class="chatbot-header-actions">
-          <button type="button" class="chatbot-icon-btn" id="chatbotClearBtn" title="${escapeHtml(hasI18n ? window.i18n.t('chatbotClear') : 'Clear chat')}">🗑️</button>
-          <button type="button" class="chatbot-icon-btn" id="chatbotCloseBtn" title="${escapeHtml(hasI18n ? window.i18n.t('chatbotClose') : 'Close chat')}">✕</button>
+          <button type="button" class="chatbot-icon-btn" id="chatbotClearBtn" title="${escapeHtml(hasI18n ? window.i18n.t('chatbotClear') : 'Clear chat')}"><i data-lucide="trash-2"></i></button>
+          <button type="button" class="chatbot-icon-btn" id="chatbotCloseBtn" title="${escapeHtml(hasI18n ? window.i18n.t('chatbotClose') : 'Close chat')}"><i data-lucide="x"></i></button>
         </div>
       </div>
       <div class="chatbot-chips" id="chatbotChips"></div>
@@ -154,12 +154,13 @@
           <input type="text" class="chatbot-input" id="chatbotInput" placeholder="${escapeHtml(hasI18n ? window.i18n.t('chatbotPlaceholder') : 'Ask a question or type a command...')}" autocomplete="off" />
         </div>
         <button type="button" class="voice-mic chatbot-voice-mic" id="chatbotVoiceMic" aria-label="${escapeHtml(hasI18n ? window.i18n.t('voiceTapToSpeak') : 'Speak')}" title="${escapeHtml(hasI18n ? window.i18n.t('voiceTapToSpeak') : 'Speak')}">
-          <span class="voice-mic-icon">🎤</span>
+          <span class="voice-mic-icon"><i data-lucide="mic"></i></span>
         </button>
         <button type="submit" class="chatbot-send" id="chatbotSendBtn">${escapeHtml(hasI18n ? window.i18n.t('chatbotSend') : 'Send')}</button>
       </form>
     `;
     document.body.appendChild(panel);
+    if (global.lucide && typeof global.lucide.createIcons === 'function') global.lucide.createIcons({attrs:{'stroke-width':1.8}});
 
     // Event listeners
     document.getElementById('chatbotCloseBtn').onclick = closeChatbot;
@@ -266,14 +267,8 @@
     const lang = window.i18n ? window.i18n.getLanguage() : 'en';
 
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (typeof state !== 'undefined' && state.token) {
-        headers.Authorization = `Bearer ${state.token}`;
-      }
-
-      const resp = await fetch('/api/ai/chat', {
+      const data = await api('/ai/chat', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
           message: text,
           lang,
@@ -282,13 +277,6 @@
       });
 
       removeTyping();
-
-      if (!resp.ok) {
-        const errJson = await resp.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Server error');
-      }
-
-      const data = await resp.json();
       const reply = data.reply || (window.i18n ? window.i18n.t('chatbotError') : 'Sorry, could not process request.');
       const action = data.action && data.action !== 'none' ? data.action : null;
 
@@ -299,12 +287,13 @@
       });
 
       // If action is specified and user explicitly wanted navigation, we can also execute or keep button
-      if (action && ['payments', 'complaints', 'notices', 'workorders', 'dashboard', 'receipts', 'residents', 'vendors', 'expenses', 'vendorperformance'].includes(action)) {
+      const actionTarget = action && typeof action === 'object' ? action.target : action;
+      if (actionTarget && ['payments', 'complaints', 'notices', 'workorders', 'dashboard', 'receipts', 'residents', 'vendors', 'expenses', 'vendorperformance'].includes(actionTarget)) {
         // Auto-navigate if prompt directly asked to "take me to" or "open"
         const lower = text.toLowerCase();
         if (lower.includes('take me') || lower.includes('go to') || lower.includes('open') || lower.includes('show me')) {
           if (typeof go === 'function') {
-            go(action);
+            go(actionTarget);
           }
         }
       }

@@ -3,6 +3,7 @@ from calendar import month_name
 
 from flask import Blueprint, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
+from utils.auth import current_user
 
 from models.db import db
 from models.payment import MaintenanceBill
@@ -21,7 +22,7 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def get_current_user():
-    return db.session.get(User, int(get_jwt_identity()))
+    return current_user()
 
 
 @auth_bp.post("/auth/register")
@@ -120,12 +121,20 @@ def login():
     password = str(data.get("password", ""))
     role = str(data.get("role", "")).strip().lower()
 
+    ok, err = valid_email(email)
+    if not ok or not password:
+        return {"error": "Invalid email or password"}, 401
+
     user = User.query.filter_by(email=email).first()
     if user is None or not user.check_password(password):
         return {"error": "Invalid email or password"}, 401
 
+    # Keep role mismatch generic so the login endpoint does not disclose which
+    # roles exist for a given email address.
+    if role and role not in PUBLIC_ROLES | {"vendor", "admin"}:
+        return {"error": "Invalid email or password"}, 401
     if role and user.role != role:
-        return {"error": f"This account is registered as {user.role.title()}"}, 403
+        return {"error": "Invalid email or password"}, 401
 
     token = create_access_token(identity=str(user.id))
     return {"message": "Login successful", "token": token, "user": user.to_dict()}
@@ -192,7 +201,10 @@ def profile():
     user.name = name
     user.phone = phone or None
     if user.role != "vendor":
-        user.apartment = str(data.get("apartment", user.apartment or "")).strip() or None
+        apartment = str(data.get("apartment", user.apartment or "")).strip()
+        if len(apartment) > 60:
+            return {"error": "Apartment / Flat must be under 60 characters"}, 400
+        user.apartment = apartment or None
 
     db.session.commit()
     return {"user": user.to_dict()}

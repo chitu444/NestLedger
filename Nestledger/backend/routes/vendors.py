@@ -1,5 +1,6 @@
 from flask import Blueprint
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from utils.auth import current_user
 
 from models.db import db
 from models.quotation import Quotation
@@ -10,16 +11,15 @@ from models.vendor import Vendor
 vendors_bp = Blueprint("vendors", __name__)
 
 
-def current_user():
-    return db.session.get(User, int(get_jwt_identity()))
-
 
 @vendors_bp.get("/vendors/me")
 @jwt_required()
 def me():
-    user = db.session.get(User, int(get_jwt_identity()))
+    user = current_user()
     if user is None:
         return {"error": "User not found"}, 404
+    if user.role != "vendor":
+        return {"error": "Vendor access required"}, 403
     return {"user": user.to_dict()}
 
 

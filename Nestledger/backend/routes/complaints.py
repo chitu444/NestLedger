@@ -2,12 +2,16 @@ from datetime import datetime
 
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from sqlalchemy import or_
+from utils.auth import current_user
 
 from models.complaint import Complaint
 from models.db import db
 from models.notification import notify
 from models.user import User
 from utils.validators import required_text, valid_status
+from utils.audit import record
+from utils.pagination import paginate_query
 
 
 complaints_bp = Blueprint("complaints", __name__)
@@ -21,9 +25,6 @@ STATUS_LABELS = {
 }
 
 
-def current_user():
-    return db.session.get(User, int(get_jwt_identity()))
-
 
 @complaints_bp.get("/complaints")
 @jwt_required()
@@ -34,22 +35,29 @@ def list_complaints():
 
     query = (
         Complaint.query
-        if user.role in {"admin", "vendor"}
+        if user.role == "admin"
         else Complaint.query.filter_by(user_id=user.id)
     )
 
-    return {
-        "complaints": [
-            complaint.to_dict()
-            for complaint in query.order_by(Complaint.id.desc()).all()
-        ]
-    }
+    status = (request.args.get("status") or "").strip().lower()
+    search = (request.args.get("q") or "").strip()
+    if status in VALID_STATUSES:
+        query = query.filter(Complaint.status == status)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(or_(Complaint.subject.ilike(like), Complaint.category.ilike(like)))
+    rows, meta = paginate_query(query.order_by(Complaint.id.desc()), default=20)
+    return {"complaints": [c.to_dict() for c in rows], "meta": meta}
 
 
 @complaints_bp.post("/complaints")
 @jwt_required()
 def create_complaint():
     user = current_user()
+    if user is None:
+        return {"error": "User not found"}, 404
+    if user.role != "resident":
+        return {"error": "Only residents can create complaints"}, 403
     data = request.get_json(silent=True) or {}
 
     category = str(data.get("category", "")).strip()
@@ -85,16 +93,19 @@ def update_complaint(cid):
 
     if complaint is None:
         return {"error": "Complaint not found"}, 404
-    if user is None or user.role not in {"admin", "vendor"}:
-        return {"error": "Only admin/vendor can update complaints"}, 403
+    if user is None or user.role != "admin":
+        return {"error": "Only admins can update complaint status"}, 403
 
     status = (request.get_json(silent=True) or {}).get("status", complaint.status)
     ok, err = valid_status(status, VALID_STATUSES)
     if not ok:
         return {"error": err}, 400
 
+    old_status = complaint.status
     complaint.status = status
     complaint.updated_at = datetime.utcnow()
+    record(user.id, "complaint.status_changed", "complaint", complaint.id,
+           f"{old_status} → {status}", commit=False)
     db.session.commit()
 
     notify(

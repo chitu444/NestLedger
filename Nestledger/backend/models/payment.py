@@ -4,6 +4,7 @@ from models.db import db
 
 
 class MaintenanceBill(db.Model):
+    __table_args__ = (db.Index("ix_bill_user_status_created", "user_id", "status", "created_at"),)
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
         db.Integer,
@@ -19,7 +20,7 @@ class MaintenanceBill(db.Model):
     assigned_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    user = db.relationship("User", foreign_keys=[user_id], backref="bills")
+    user = db.relationship("User", foreign_keys=[user_id], backref="bills", lazy="joined")
     assigned_by = db.relationship("User", foreign_keys=[assigned_by_id])
 
     def to_dict(self):
@@ -71,7 +72,7 @@ class Payment(db.Model):
     razorpay_payment_id = db.Column(db.String(120), unique=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    user = db.relationship("User", backref="payments")
+    user = db.relationship("User", backref="payments", lazy="joined")
     bill = db.relationship("MaintenanceBill", backref="payments")
     work_order = db.relationship("WorkOrder", backref="payments")
 

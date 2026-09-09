@@ -6,6 +6,8 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from flask import Blueprint, current_app, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from utils.auth import current_user_id
+from utils.audit import record
 
 from models.db import db
 from models.notification import notify
@@ -16,15 +18,13 @@ from models.work_order import WorkOrder
 payments_bp = Blueprint("payments", __name__)
 
 
-def current_user_id():
-    return int(get_jwt_identity())
 
 
 def razorpay_client():
     key_id = current_app.config["RAZORPAY_KEY_ID"]
     secret = current_app.config["RAZORPAY_KEY_SECRET"]
     if not key_id or not secret:
-        return None, ({"error": "Razorpay is not configured. Add test keys to backend/.env."}, 503)
+        return None, ({"error": "Razorpay is not configured on the server."}, 503)
     import razorpay
     return razorpay.Client(auth=(key_id, secret)), None
 
@@ -53,14 +53,24 @@ def create_payment_order(*, uid, amount, description, receipt, notes, bill_id=No
 @jwt_required()
 def bills():
     uid = current_user_id()
-    return {"bills": [b.to_dict() for b in MaintenanceBill.query.filter_by(user_id=uid).order_by(MaintenanceBill.id.desc()).all()]}
+    query = MaintenanceBill.query.filter_by(user_id=uid)
+    status = (request.args.get("status") or "").strip().lower()
+    if status: query = query.filter(MaintenanceBill.status == status)
+    rows, meta = paginate_query(query.order_by(MaintenanceBill.id.desc()), default=15)
+    return {"bills": [b.to_dict() for b in rows], "meta": meta}
 
 
 @payments_bp.get("/payments")
 @jwt_required()
 def list_payments():
     uid = current_user_id()
-    return {"payments": [p.to_dict() for p in Payment.query.filter_by(user_id=uid).order_by(Payment.id.desc()).all()]}
+    query = Payment.query.filter_by(user_id=uid)
+    status = (request.args.get("status") or "").strip().lower()
+    payment_type = (request.args.get("type") or "").strip().lower()
+    if status: query = query.filter(Payment.status == status)
+    if payment_type: query = query.filter(Payment.payment_type == payment_type)
+    rows, meta = paginate_query(query.order_by(Payment.id.desc()), default=15)
+    return {"payments": [p.to_dict() for p in rows], "meta": meta}
 
 
 @payments_bp.post("/payments/create-order")
@@ -70,6 +80,16 @@ def create_order():
     bill = MaintenanceBill.query.filter_by(id=data.get("bill_id"), user_id=uid).first()
     if bill is None: return {"error": "Bill not found"}, 404
     if bill.status == "paid": return {"error": "Bill is already paid"}, 400
+    pending = Payment.query.filter_by(bill_id=bill.id, user_id=uid, status="created").order_by(Payment.id.desc()).first()
+    if pending and pending.razorpay_order_id:
+        return {
+            "order_id": pending.razorpay_order_id,
+            "amount": int(round(float(pending.amount) * 100)),
+            "currency": "INR",
+            "key_id": current_app.config["RAZORPAY_KEY_ID"],
+            "name": "NestLedger",
+            "description": pending.description,
+        }
     result, error = create_payment_order(uid=uid, amount=bill.amount, description=bill.description,
         receipt=f"NL-BILL-{bill.id}", notes={"user_id": str(uid), "bill_id": str(bill.id)}, bill_id=bill.id)
     return error or result
@@ -158,6 +178,8 @@ def _mark_payment_paid(payment, payment_id):
         bill = db.session.get(MaintenanceBill, payment.bill_id)
         if bill is not None:
             bill.status = "paid"
+    record(payment.user_id, "payment.verified", "payment", payment.id,
+           f"₹{payment.amount:,.0f} marked paid", commit=False)
     db.session.commit()
     notify(
         payment.user_id,

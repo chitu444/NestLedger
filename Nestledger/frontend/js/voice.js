@@ -56,6 +56,21 @@
       .replace(/\s+/g, ' ').trim();
   }
 
+  let commandIndex = null;
+  function getCommandIndex() {
+    if (commandIndex) return commandIndex;
+    commandIndex = new Map();
+    for (const cmd of COMMANDS) {
+      for (const phrase of cmd.phrases) {
+        const key = normalize(phrase);
+        const bucket = commandIndex.get(key) || [];
+        bucket.push(cmd);
+        commandIndex.set(key, bucket);
+      }
+    }
+    return commandIndex;
+  }
+
   function words(text) { return normalize(text).split(/\s+/).filter(Boolean); }
 
   function distance(a,b) {
@@ -85,6 +100,12 @@
 
   function matchCommand(transcript) {
     const role = global.state && global.state.role;
+    const normalized = normalize(transcript);
+    const exact = getCommandIndex().get(normalized);
+    if (exact) {
+      const allowed = exact.find(cmd => !cmd.roles || cmd.roles.includes(role));
+      if (allowed) return allowed;
+    }
     let best=null, bestScore=0;
     for(const cmd of COMMANDS) {
       if(cmd.roles && !cmd.roles.includes(role)) continue;
@@ -293,7 +314,7 @@
     if(!btn){
       btn=document.createElement('button');
       btn.id='chatbotVoiceMic'; btn.type='button'; btn.className='voice-mic chatbot-voice-mic';
-      btn.innerHTML='<span class="voice-mic-icon">🎤</span><span class="voice-mic-label"></span>';
+      btn.innerHTML='<span class="voice-mic-icon"><i data-lucide="mic"></i></span><span class="voice-mic-label"></span>';if(window.lucide&&typeof window.lucide.createIcons==='function')window.lucide.createIcons({attrs:{'stroke-width':1.8}});
       wrap.appendChild(btn);
     }
     btn.onclick=startListening;

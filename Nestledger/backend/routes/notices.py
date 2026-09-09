@@ -1,25 +1,30 @@
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from sqlalchemy import or_
+from utils.auth import current_user
 
 from models.db import db
 from models.notice import Notice
 from models.notification import notify_many
 from models.user import User
 from utils.validators import required_text
+from utils.pagination import paginate_query
 
 
 notices_bp = Blueprint("notices", __name__)
 
 
-def current_user():
-    return db.session.get(User, int(get_jwt_identity()))
-
 
 @notices_bp.get("/notices")
 @jwt_required()
 def list_notices():
-    notices = Notice.query.order_by(Notice.id.desc()).all()
-    return {"notices": [notice.to_dict() for notice in notices]}
+    query = Notice.query
+    search = (request.args.get("q") or "").strip()
+    if search:
+        like = f"%{search}%"
+        query = query.filter(or_(Notice.title.ilike(like), Notice.body.ilike(like), Notice.tag.ilike(like)))
+    notices, meta = paginate_query(query.order_by(Notice.id.desc()), default=15)
+    return {"notices": [notice.to_dict() for notice in notices], "meta": meta}
 
 
 @notices_bp.post("/notices")

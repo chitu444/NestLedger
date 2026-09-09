@@ -4,6 +4,7 @@ from models.db import db
 
 
 class Complaint(db.Model):
+    __table_args__ = (db.Index("ix_complaint_user_status_created", "user_id", "status", "created_at"),)
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
         db.Integer,
@@ -18,7 +19,7 @@ class Complaint(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user = db.relationship("User", backref="complaints")
+    user = db.relationship("User", backref="complaints", lazy="joined")
 
     # Ordered lifecycle used to render the resident-facing timeline.
     TIMELINE = ("open", "in_progress", "resolved", "closed")

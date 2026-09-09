@@ -2,6 +2,7 @@ from datetime import datetime
 
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from utils.auth import current_user
 
 from models.db import db
 from models.notification import notify
@@ -11,10 +12,23 @@ from models.user import User
 from models.vendor import Vendor
 from models.work_order import WorkOrder
 from utils.validators import required_text, valid_amount, REQUEST_CATEGORY_TO_JOB
+from utils.audit import record
+from utils.pagination import paginate_query
 
 
 workorders_bp = Blueprint("workorders", __name__)
 VALID_STATUSES = {"open", "accepted", "in_progress", "completed", "cancelled"}
+VALID_TRANSITIONS = {
+    "open": {"accepted", "cancelled"},
+    "accepted": {"in_progress", "open"},
+    "in_progress": {"completed", "open"},
+    "completed": set(),
+    "cancelled": set(),
+}
+
+
+def can_transition(current, target):
+    return target in VALID_TRANSITIONS.get(current, set())
 
 
 def category_job(category: str):
@@ -25,9 +39,6 @@ def vendor_matches_order(vendor: Vendor, order: WorkOrder) -> bool:
     required_job = category_job(order.category)
     return required_job is not None and (vendor.service or "").strip().lower() == required_job
 
-
-def current_user():
-    return db.session.get(User, int(get_jwt_identity()))
 
 
 @workorders_bp.get("/work-orders")
@@ -60,11 +71,19 @@ def list_orders():
     else:
         query = WorkOrder.query
 
-    orders = query.order_by(WorkOrder.id.desc()).all()
+    status = (request.args.get("status") or "").strip().lower()
+    search = (request.args.get("q") or "").strip()
+    if status in VALID_STATUSES:
+        query = query.filter(WorkOrder.status == status)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(db.or_(WorkOrder.title.ilike(like), WorkOrder.category.ilike(like), WorkOrder.apartment.ilike(like)))
+    orders, meta = paginate_query(query.order_by(WorkOrder.id.desc()), default=20)
+    WorkOrder.prime_summary([order.id for order in orders])
     order_dicts = [order.to_dict() for order in orders]
 
     if user.role == "vendor":
-        profile = Vendor.query.filter_by(user_id=user.id).first()
+        profile = Vendor.query.filter_by(user_id=user.id, status="active").first()
         if profile is not None and orders:
             pending_quotes = {
                 q.work_order_id: q
@@ -78,7 +97,7 @@ def list_orders():
                 quote = pending_quotes.get(order.id)
                 order_dict["my_quote"] = quote.to_dict() if quote else None
 
-    return {"work_orders": order_dicts}
+    return {"work_orders": order_dicts, "meta": meta}
 
 
 @workorders_bp.post("/work-orders")
@@ -169,7 +188,7 @@ def accept_order(wid):
     if user is None or user.role != "vendor":
         return {"error": "Only vendors can accept work orders"}, 403
 
-    profile = Vendor.query.filter_by(user_id=user.id).first()
+    profile = Vendor.query.filter_by(user_id=user.id, status="active").first()
     if profile is None:
         return {"error": "No vendor profile found for this account"}, 400
 
@@ -210,7 +229,7 @@ def withdraw_order(wid):
     if user is None or user.role != "vendor":
         return {"error": "Only vendors can withdraw from a job"}, 403
 
-    profile = Vendor.query.filter_by(user_id=user.id).first()
+    profile = Vendor.query.filter_by(user_id=user.id, status="active").first()
     if profile is None:
         return {"error": "No vendor profile found for this account"}, 400
 
@@ -261,8 +280,11 @@ def update_status(wid):
     if new_status not in VALID_STATUSES:
         return {"error": "Invalid work order status"}, 400
 
+    if not can_transition(order.status, new_status):
+        return {"error": f"Cannot move a {order.status.replace('_', ' ')} work order to {new_status.replace('_', ' ')}"}, 409
+
     if user.role == "vendor":
-        profile = Vendor.query.filter_by(user_id=user.id).first()
+        profile = Vendor.query.filter_by(user_id=user.id, status="active").first()
         if profile is None or order.vendor_id != profile.id:
             return {"error": "You can only update work orders assigned to you"}, 403
         if new_status not in {"in_progress", "completed"}:
@@ -281,10 +303,13 @@ def update_status(wid):
     elif user.role != "admin":
         return {"error": "Not authorized"}, 403
 
+    old_status = order.status
     order.status = new_status
     if new_status == "completed":
         order.completed_at = datetime.utcnow()
 
+    record(user.id, "work_order.status_changed", "work_order", order.id,
+           f"{old_status} → {new_status}", commit=False)
     db.session.commit()
 
     if new_status == "completed":
@@ -431,15 +456,15 @@ def accept_quote(wid, qid):
     if order.status != "open" or order.vendor_id is not None:
         return {"error": "This work order is no longer open"}, 409
 
-    quote = db.session.get(Quotation, qid)
+    quote = db.session.get(Quotation, qid, with_for_update=True)
     if quote is None or quote.work_order_id != order.id:
         return {"error": "Quote not found"}, 404
     if quote.status != "pending":
         return {"error": "This quote is no longer pending"}, 409
 
     vendor = db.session.get(Vendor, quote.vendor_id)
-    if vendor is None:
-        return {"error": "Vendor not found"}, 404
+    if vendor is None or vendor.status != "active":
+        return {"error": "Vendor is no longer active"}, 409
 
     quote.status = "accepted"
     order.vendor_id = vendor.id
@@ -525,7 +550,7 @@ def withdraw_quote(wid, qid):
     if user is None or user.role != "vendor":
         return {"error": "Only vendors can withdraw their own quotes"}, 403
 
-    profile = Vendor.query.filter_by(user_id=user.id).first()
+    profile = Vendor.query.filter_by(user_id=user.id, status="active").first()
     if profile is None:
         return {"error": "No vendor profile found for this account"}, 400
 

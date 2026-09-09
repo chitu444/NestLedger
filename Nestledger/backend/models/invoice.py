@@ -4,6 +4,7 @@ from models.db import db
 
 
 class Invoice(db.Model):
+    __table_args__ = (db.Index("ix_invoice_vendor_status_created", "vendor_id", "status", "created_at"),)
     id = db.Column(db.Integer, primary_key=True)
     vendor_id = db.Column(
         db.Integer,

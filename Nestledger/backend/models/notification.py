@@ -4,6 +4,7 @@ from models.db import db
 
 
 class Notification(db.Model):
+    __table_args__ = (db.Index("ix_notification_user_read_created", "user_id", "is_read", "created_at"),)
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
         db.Integer,
