@@ -11,6 +11,7 @@ from models.user import User
 from routes.admin import admin_bp
 from routes.auth import auth_bp
 from routes.complaints import complaints_bp
+from routes.chatbot import chatbot_bp
 from routes.dashboard import dashboard_bp
 from routes.invoices import invoices_bp
 from routes.notices import notices_bp
@@ -76,6 +77,7 @@ for blueprint in (
     dashboard_bp,
     payments_bp,
     complaints_bp,
+    chatbot_bp,
     admin_bp,
     workorders_bp,
     reports_bp,
