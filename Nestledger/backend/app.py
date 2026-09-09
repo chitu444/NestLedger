@@ -3,9 +3,12 @@ from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, request, send_from_directory
+from flask import Flask, current_app, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+import uuid
 
 from models.db import db
 from models.user import User
@@ -123,9 +126,35 @@ def seed_admin() -> None:
 
 with app.app_context():
     (BASE_DIR / "database").mkdir(parents=True, exist_ok=True)
-    db.create_all()
-    run_migrations()
-    seed_admin()
+    create_all_default = "0" if app_env == "production" else "1"
+    migrations_default = "0" if app_env == "production" else "1"
+    seed_default = "0" if app_env == "production" else "1"
+    if os.getenv("RUN_DB_CREATE_ALL_ON_STARTUP", create_all_default).lower() not in {"0", "false", "no"}:
+        db.create_all()
+    if os.getenv("RUN_MIGRATIONS_ON_STARTUP", migrations_default).lower() not in {"0", "false", "no"}:
+        run_migrations()
+    if os.getenv("RUN_ADMIN_SEED_ON_STARTUP", seed_default).lower() not in {"0", "false", "no"}:
+        seed_admin()
+
+
+@app.before_request
+def reset_database_session():
+    # Vercel/serverless workers may reuse a Python process between requests.
+    # Clear any transaction left in a failed state before a new API request.
+    if request.path.startswith("/api/"):
+        try:
+            db.session.rollback()
+        except Exception:
+            current_app.logger.exception("Unable to reset database session")
+
+
+@app.teardown_request
+def rollback_failed_request(error=None):
+    if error is not None:
+        try:
+            db.session.rollback()
+        except Exception:
+            current_app.logger.exception("Unable to rollback failed request")
 
 
 @app.after_request
@@ -175,6 +204,54 @@ def request_too_large(error):
     return ({"ok": False, "error": {"code": "PAYLOAD_TOO_LARGE", "message": "The request body is too large."}}, 413)
 
 
+@app.errorhandler(IntegrityError)
+def integrity_error(error):
+    db.session.rollback()
+    current_app.logger.exception("Database integrity error")
+    if request.path.startswith("/api/"):
+        return {"ok": False, "error": {"code": "CONFLICT", "message": "The request conflicts with existing data. Check for a duplicate record and try again."}}, 409
+    return error
+
+
+@app.errorhandler(OperationalError)
+def database_unavailable(error):
+    db.session.rollback()
+    current_app.logger.exception("Database operational error")
+    if request.path.startswith("/api/"):
+        return {"ok": False, "error": {"code": "DATABASE_UNAVAILABLE", "message": "The database is temporarily unavailable. Please try again."}}, 503
+    return error
+
+
+@app.errorhandler(SQLAlchemyError)
+def database_error(error):
+    db.session.rollback()
+    current_app.logger.exception("Database error")
+    if request.path.startswith("/api/"):
+        return {"ok": False, "error": {"code": "DATABASE_ERROR", "message": "The database could not complete this request. Please try again."}}, 503
+    return error
+
+
+@app.errorhandler(ValueError)
+def value_error(error):
+    if request.path.startswith("/api/"):
+        db.session.rollback()
+        return {"ok": False, "error": {"code": "INVALID_VALUE", "message": str(error)[:300] or "The request contains an invalid value."}}, 400
+    return error
+
+
+@app.errorhandler(500)
+def internal_server_error(error):
+    # Never leak a Flask HTML error page to the SPA. Log the traceback server-side
+    # and return a predictable JSON error. Unexpected exceptions remain 500 so
+    # monitoring can still detect genuine application bugs.
+    db.session.rollback()
+    request_id = uuid.uuid4().hex[:12]
+    current_app.logger.exception("Unhandled API/server exception [%s]", request_id)
+    if request.path.startswith("/api/"):
+        return {"ok": False, "error": {"code": "INTERNAL_SERVER_ERROR", "message": "The server could not complete this request.", "request_id": request_id}}, 500
+    return error
+
+
 @app.get("/")
 def home():
     return send_from_directory(app.static_folder, "index.html")
@@ -183,6 +260,30 @@ def home():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/health")
+def api_health():
+    """Production readiness probe with a real database connectivity check."""
+    try:
+        db.session.execute(text("SELECT 1"))
+        from utils.migrations import migration_status
+        migrations = migration_status()
+        ready = not migrations["pending"]
+        return jsonify({
+            "status": "ok" if ready else "degraded",
+            "database": "ok",
+            "migrations": {
+                "current": migrations["current"],
+                "latest": migrations["latest"],
+                "pending": len(migrations["pending"]),
+            },
+            "environment": app_env,
+        }), 200 if ready else 503
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Health check failed")
+        return jsonify({"status": "error", "database": "unavailable"}), 503
 
 
 @app.get("/api/<path:missing>")

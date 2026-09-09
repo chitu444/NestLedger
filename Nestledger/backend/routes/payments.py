@@ -1,6 +1,8 @@
 import hashlib
 import hmac
 import io
+import uuid
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
@@ -11,6 +13,7 @@ from utils.audit import record
 from utils.pagination import paginate_query
 
 from models.db import db
+from sqlalchemy.exc import IntegrityError
 from models.notification import notify
 from models.payment import MaintenanceBill, Payment, PaymentWebhookEvent
 from models.user import User
@@ -22,32 +25,87 @@ payments_bp = Blueprint("payments", __name__)
 
 
 def razorpay_client():
-    key_id = current_app.config["RAZORPAY_KEY_ID"]
-    secret = current_app.config["RAZORPAY_KEY_SECRET"]
+    key_id = str(current_app.config.get("RAZORPAY_KEY_ID") or "").strip()
+    secret = str(current_app.config.get("RAZORPAY_KEY_SECRET") or "").strip()
     if not key_id or not secret:
-        return None, ({"error": "Razorpay is not configured on the server."}, 503)
-    import razorpay
-    return razorpay.Client(auth=(key_id, secret)), None
+        return None, ({"error": "Razorpay is not configured on the server. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in the deployment environment."}, 503)
+    try:
+        import razorpay
+        return razorpay.Client(auth=(key_id, secret)), None
+    except Exception:
+        current_app.logger.exception("Unable to initialize Razorpay client")
+        return None, ({"error": "Razorpay payment service is unavailable on the server."}, 503)
+
+
+def _amount_paise(amount):
+    try:
+        value = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    paise = int(value * 100)
+    # Razorpay's INR Orders API requires at least ₹1.00 (100 paise).
+    if paise < 100:
+        return None
+    return paise
+
+
+def _provider_error(exc):
+    """Return a safe, useful Razorpay error without exposing credentials."""
+    description = None
+    try:
+        payload = getattr(exc, "error", None)
+        if isinstance(payload, dict):
+            description = payload.get("description") or payload.get("reason")
+        if not description and getattr(exc, "args", None):
+            description = str(exc.args[0])
+    except Exception:
+        description = None
+    if description:
+        return str(description)[:300]
+    return "Razorpay rejected the payment order."
 
 
 def create_payment_order(*, uid, amount, description, receipt, notes, bill_id=None, work_order_id=None, payment_type="maintenance"):
     client, error = razorpay_client()
     if error:
         return None, error
-    amount_paise = int(round(float(amount) * 100))
-    if amount_paise <= 0:
-        return None, ({"error": "Payment amount must be greater than zero"}, 400)
+    amount_paise = _amount_paise(amount)
+    if amount_paise is None:
+        return None, ({"error": "Payment amount must be at least ₹1.00 and must be a valid number."}, 400)
+
+    # Razorpay requires a unique receipt of at most 40 characters.
+    receipt = str(receipt or "").strip()[:32] + "-" + uuid.uuid4().hex[:7]
+    notes = {str(k)[:255]: str(v)[:512] for k, v in (notes or {}).items()}
     try:
         order = client.order.create({"amount": amount_paise, "currency": "INR", "receipt": receipt, "notes": notes})
+        order_id = str(order.get("id") or "").strip()
+        if not order_id:
+            raise RuntimeError("Razorpay returned an invalid order response")
         payment = Payment(user_id=uid, bill_id=bill_id, work_order_id=work_order_id, payment_type=payment_type,
-                          amount=amount, description=description, status="created", razorpay_order_id=order["id"])
+                          amount=amount, description=description, status="created", razorpay_order_id=order_id)
         db.session.add(payment)
         db.session.commit()
-        return {"order_id": order["id"], "amount": amount_paise, "currency": "INR",
+        return {"order_id": order_id, "amount": amount_paise, "currency": "INR",
                 "key_id": current_app.config["RAZORPAY_KEY_ID"], "name": "NestLedger", "description": description}, None
-    except Exception:
+    except IntegrityError:
         db.session.rollback()
-        raise
+        # A second click/request can race the first one. Let the caller recover
+        # the already-created local order instead of returning a 500.
+        existing = None
+        if bill_id:
+            existing = Payment.query.filter_by(bill_id=bill_id, user_id=uid, status="created").order_by(Payment.id.desc()).first()
+        elif work_order_id:
+            existing = Payment.query.filter_by(work_order_id=work_order_id, user_id=uid, status="created").order_by(Payment.id.desc()).first()
+        if existing and existing.razorpay_order_id:
+            return {"order_id": existing.razorpay_order_id, "amount": _amount_paise(existing.amount),
+                    "currency": "INR", "key_id": current_app.config["RAZORPAY_KEY_ID"],
+                    "name": "NestLedger", "description": existing.description}, None
+        current_app.logger.exception("Payment record could not be saved after Razorpay order creation")
+        return None, ({"error": "The payment order was created but could not be saved. Please try again."}, 503)
+    except Exception as exc:
+        db.session.rollback()
+        current_app.logger.exception("Razorpay order creation failed")
+        return None, ({"error": _provider_error(exc)}, 502)
 
 
 @payments_bp.get("/bills")
@@ -83,9 +141,12 @@ def create_order():
     if bill.status == "paid": return {"error": "Bill is already paid"}, 400
     pending = Payment.query.filter_by(bill_id=bill.id, user_id=uid, status="created").order_by(Payment.id.desc()).first()
     if pending and pending.razorpay_order_id:
+        _, config_error = razorpay_client()
+        if config_error:
+            return config_error
         return {
             "order_id": pending.razorpay_order_id,
-            "amount": int(round(float(pending.amount) * 100)),
+            "amount": _amount_paise(pending.amount),
             "currency": "INR",
             "key_id": current_app.config["RAZORPAY_KEY_ID"],
             "name": "NestLedger",
@@ -110,9 +171,12 @@ def create_work_order_payment():
         return {"error": "Vendor payment has already been completed"}, 400
     pending = Payment.query.filter_by(work_order_id=order.id, status="created").order_by(Payment.id.desc()).first()
     if pending and pending.razorpay_order_id:
+        _, config_error = razorpay_client()
+        if config_error:
+            return config_error
         return {
             "order_id": pending.razorpay_order_id,
-            "amount": int(round(float(pending.amount) * 100)),
+            "amount": _amount_paise(pending.amount),
             "currency": "INR",
             "key_id": current_app.config["RAZORPAY_KEY_ID"],
             "name": "NestLedger",
@@ -142,7 +206,9 @@ def verify():
     if payment.status == "paid":
         return {"message": "Payment already verified", "payment": payment.to_dict()}
 
-    secret = current_app.config["RAZORPAY_KEY_SECRET"]
+    secret = str(current_app.config.get("RAZORPAY_KEY_SECRET") or "").strip()
+    if not secret:
+        return {"error": "Razorpay is not configured on the server."}, 503
     expected = hmac.new(secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, str(signature)):
         return {"error": "Payment verification failed"}, 400
@@ -158,7 +224,9 @@ def verify():
         if str(remote_payment.get("order_id")) != str(order_id):
             return {"error": "Payment does not belong to this order"}, 400
         remote_amount = int(remote_payment.get("amount") or 0)
-        expected_amount = int(round(float(payment.amount) * 100))
+        expected_amount = _amount_paise(payment.amount)
+        if expected_amount is None:
+            return {"error": "Invalid local payment amount"}, 400
         if remote_amount != expected_amount:
             return {"error": "Payment amount mismatch"}, 400
         if remote_payment.get("status") not in {"authorized", "captured"}:
@@ -182,12 +250,18 @@ def _mark_payment_paid(payment, payment_id):
     record(payment.user_id, "payment.verified", "payment", payment.id,
            f"₹{payment.amount:,.0f} marked paid", commit=False)
     db.session.commit()
-    notify(
-        payment.user_id,
-        "Payment Successful",
-        f"Your payment of ₹{payment.amount:,.0f} was successful.",
-        notif_type="payment",
-    )
+    try:
+        notify(
+            payment.user_id,
+            "Payment Successful",
+            f"Your payment of ₹{payment.amount:,.0f} was successful.",
+            notif_type="payment",
+        )
+    except Exception:
+        # Payment state is already committed; a notification failure must not
+        # turn a successful payment verification into an HTTP 500.
+        db.session.rollback()
+        current_app.logger.exception("Payment notification creation failed")
 
 
 @payments_bp.post("/payments/webhook")

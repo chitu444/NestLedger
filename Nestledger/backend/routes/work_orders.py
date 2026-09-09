@@ -142,14 +142,22 @@ def create_order():
         vendor_id = data.get("vendor_id")
 
         if resident_id:
-            resident = db.session.get(User, int(resident_id))
+            try:
+                resident_id = int(resident_id)
+            except (TypeError, ValueError):
+                return {"error": "Invalid resident"}, 400
+            resident = db.session.get(User, resident_id)
             if resident is None or resident.role != "resident":
                 return {"error": "Invalid resident"}, 400
             order.resident_id = resident.id
             order.apartment = resident.apartment
 
         if vendor_id:
-            vendor = db.session.get(Vendor, int(vendor_id))
+            try:
+                vendor_id = int(vendor_id)
+            except (TypeError, ValueError):
+                return {"error": "Invalid vendor"}, 400
+            vendor = db.session.get(Vendor, vendor_id)
             if vendor is None:
                 return {"error": "Invalid vendor"}, 400
             if not vendor_matches_order(vendor, order):

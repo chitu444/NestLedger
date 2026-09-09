@@ -1,6 +1,8 @@
 from datetime import datetime
 
 from models.db import db
+from sqlalchemy.exc import SQLAlchemyError
+from flask import current_app
 
 
 class Notification(db.Model):
@@ -44,9 +46,14 @@ def notify(user_id, title, message, notif_type="general"):
     if not user_id:
         return None
     n = Notification(user_id=user_id, title=title, message=message, type=notif_type)
-    db.session.add(n)
-    db.session.commit()
-    return n
+    try:
+        db.session.add(n)
+        db.session.commit()
+        return n
+    except SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.exception("Notification creation failed")
+        return None
 
 
 def notify_many(user_ids, title, message, notif_type="general"):
@@ -56,5 +63,10 @@ def notify_many(user_ids, title, message, notif_type="general"):
         n = Notification(user_id=uid, title=title, message=message, type=notif_type)
         db.session.add(n)
         created.append(n)
-    db.session.commit()
-    return created
+    try:
+        db.session.commit()
+        return created
+    except SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.exception("Bulk notification creation failed")
+        return []
