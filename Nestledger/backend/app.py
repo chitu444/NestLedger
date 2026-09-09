@@ -207,7 +207,7 @@ def home():
 
 
 @app.get("/health")
-def health():
+def basic_health():
     return {"status": "ok"}
 
 
