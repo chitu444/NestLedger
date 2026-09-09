@@ -16,9 +16,10 @@
     const options = { ...opt, headers: { ...(opt.body ? {'Content-Type':'application/json'} : {}), ...(opt.headers || {}) } };
     const method = String(options.method || 'GET').toUpperCase();
     const isGet = method === 'GET';
-    const ttl = options.cacheTtl === undefined ? (isGet ? 1500 : 0) : Number(options.cacheTtl || 0);
+    const ttl = options.cacheTtl === undefined ? (isGet ? 8000 : 0) : Number(options.cacheTtl || 0);
     delete options.cacheTtl;
     const key = cacheKey(path);
+    const basePath = String(path).split('?')[0];
     if (isGet && ttl > 0) {
       const hit = cache.get(key);
       if (hit && hit.expires > Date.now()) return hit.data;
@@ -43,7 +44,7 @@
           const message = data?.error?.message || data?.error || data?.message || `Request failed (${response.status})`;
           const error = new Error(message); error.status = response.status; error.code = data?.error?.code; throw error;
         }
-        if (isGet) { if (data && data.meta) lastMeta.set(key, data.meta); if (ttl > 0) cache.set(key, {data, expires: Date.now() + ttl}); }
+        if (isGet) { if (data && data.meta) { lastMeta.set(key, data.meta); lastMeta.set(basePath, data.meta); } if (ttl > 0) cache.set(key, {data, expires: Date.now() + ttl}); }
         if (!isGet) invalidate('/');
         return data;
       } finally { clearTimeout(timer); }
@@ -67,5 +68,17 @@
     return response;
   }
 
-  window.NLApi = { request, download, invalidate, clear, meta: (p) => lastMeta.get(p) || null, get: (p, ttl=0) => request(p, {cacheTtl:ttl}), id: () => requestId };
+  async function prefetch(paths){
+    const queue=[...new Set(paths||[])];
+    let cursor=0;
+    async function worker(){
+      while(cursor<queue.length){
+        const path=queue[cursor++];
+        try{await request(path,{cacheTtl:15000})}catch{}
+      }
+    }
+    await Promise.all([worker(),worker()]);
+  }
+
+  window.NLApi = { request, download, invalidate, clear, meta: (p) => lastMeta.get(p) || null, get: (p, ttl=0) => request(p, {cacheTtl:ttl}), prefetch, id: () => requestId };
 })();

@@ -1264,3 +1264,8 @@ html.theme-transition .theme-toggle svg{
   html.theme-transition body *{transition:none!important}
   html.theme-transition .theme-toggle svg{animation:none!important}
 }
+
+/* Fast navigation: keep the current page visible while the next view is fetched. */
+#content.is-loading{opacity:.78;transition:opacity .14s ease}
+#content[aria-busy="true"]{will-change:opacity}
+@media(prefers-reduced-motion:reduce){#content.is-loading{transition:none}}

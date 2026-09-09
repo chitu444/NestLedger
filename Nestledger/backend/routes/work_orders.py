@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user
+from sqlalchemy.orm import selectinload
 
 from models.db import db
 from models.notification import notify
@@ -81,6 +82,24 @@ def list_orders():
     orders, meta = paginate_query(query.order_by(WorkOrder.id.desc()), default=20)
     WorkOrder.prime_summary([order.id for order in orders])
     order_dicts = [order.to_dict() for order in orders]
+
+    # Residents/admins need to see vendor quotations without a second round
+    # trip. Load all quotes for the displayed orders in one query and attach
+    # them to the response. This also makes the resident "View quotes" action
+    # effectively instant once the work-order list has loaded.
+    if user.role in {"resident", "admin"} and orders:
+        quote_rows = (
+            Quotation.query.options(selectinload(Quotation.vendor))
+            .filter(Quotation.work_order_id.in_([o.id for o in orders]))
+            .order_by(Quotation.amount.asc())
+            .all()
+        )
+        quotes_by_order = {}
+        for quote in quote_rows:
+            quotes_by_order.setdefault(quote.work_order_id, []).append(quote.to_dict())
+        for order_dict in order_dicts:
+            order_dict["quotes"] = quotes_by_order.get(order_dict["id"], [])
+            order_dict["quotes_count"] = len(order_dict["quotes"]) if order_dict.get("status") == "open" else None
 
     if user.role == "vendor":
         profile = Vendor.query.filter_by(user_id=user.id, status="active").first()
