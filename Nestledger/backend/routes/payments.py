@@ -252,13 +252,28 @@ def _receipt_pdf_response(payment):
     ]
 
     pdf.set_text_color(22, 34, 29)
+    left_x = 10
+    value_x = 65
+    label_w = 55
+    value_w = 135
+    row_h = 9
+
     for label, value in rows:
+        # Explicitly reset X for every row. This is important because
+        # multi_cell() leaves the cursor at the end of the cell in some
+        # FPDF/PyFPDF versions, which otherwise pushes the next label
+        # progressively to the right.
+        y = pdf.get_y()
+        pdf.set_xy(left_x, y)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(55, 9, pdf_text(label))
+        pdf.cell(label_w, row_h, pdf_text(label))
+
+        pdf.set_xy(value_x, y)
         pdf.set_font("Helvetica", "", 11)
-        # Use the remaining page width explicitly. This avoids fpdf2 edge cases
-        # around width=0 after a preceding cell.
-        pdf.multi_cell(135, 9, pdf_text(value))
+        pdf.multi_cell(value_w, row_h, pdf_text(value))
+
+        # Start the next row at the left margin, below the tallest cell.
+        pdf.set_xy(left_x, max(y + row_h, pdf.get_y()))
 
     pdf.ln(6)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())

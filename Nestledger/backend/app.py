@@ -102,7 +102,7 @@ def run_safe_migrations() -> None:
     if "complaint" in existing_tables:
         complaint_columns = {c["name"] for c in inspector.get_columns("complaint")}
         if "updated_at" not in complaint_columns:
-            db.session.execute(text("ALTER TABLE complaint ADD COLUMN updated_at DATETIME"))
+            db.session.execute(text("ALTER TABLE complaint ADD COLUMN updated_at TIMESTAMP"))
             db.session.execute(text("UPDATE complaint SET updated_at = created_at"))
 
     # Older NestLedger databases have a vendor table without user_id.  The
