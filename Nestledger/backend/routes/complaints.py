@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
@@ -72,6 +72,24 @@ def create_complaint():
     ok, err = required_text(description, "Description", max_len=3000)
     if not ok:
         return {"error": err}, 400
+
+    # Prevent accidental double-submission of the same complaint. This is a
+    # server-side safeguard in addition to the frontend submit lock.
+    recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+    duplicate = (
+        Complaint.query
+        .filter(
+            Complaint.user_id == user.id,
+            Complaint.category == category,
+            Complaint.subject == subject,
+            Complaint.description == description,
+            Complaint.created_at >= recent_cutoff,
+        )
+        .order_by(Complaint.id.desc())
+        .first()
+    )
+    if duplicate is not None:
+        return {"complaint": duplicate.to_dict(), "duplicate": True}, 200
 
     complaint = Complaint(
         user_id=user.id,

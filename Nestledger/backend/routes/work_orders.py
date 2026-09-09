@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
@@ -124,19 +124,45 @@ def create_order():
     if not ok:
         return {"error": err}, 400
     amount = float(data.get("amount") or 0)
+    description = str(data.get("description") or "").strip() or None
+    due_date = str(data.get("due_date") or "").strip() or None
+
+    # Protect the create endpoint against accidental double-submits.
+    # The UI also locks the submit button, but this server-side guard is important
+    # because browsers, retries, or multiple frontend handlers can otherwise send
+    # the same POST twice. A matching request created in the last 30 seconds is
+    # treated as the same submission.
+    recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
 
     order = WorkOrder(
         title=title,
         category=category[:80],
-        description=str(data.get("description") or "").strip() or None,
+        description=description,
         amount=amount,
-        due_date=str(data.get("due_date") or "").strip() or None,
+        due_date=due_date,
     )
 
     if user.role == "resident":
         order.resident_id = user.id
         order.apartment = user.apartment
         order.status = "open"
+
+        duplicate = (
+            WorkOrder.query
+            .filter(
+                WorkOrder.resident_id == user.id,
+                WorkOrder.title == title,
+                WorkOrder.category == category,
+                WorkOrder.description == description,
+                WorkOrder.amount == amount,
+                WorkOrder.due_date == due_date,
+                WorkOrder.created_at >= recent_cutoff,
+            )
+            .order_by(WorkOrder.id.desc())
+            .first()
+        )
+        if duplicate is not None:
+            return {"work_order": duplicate.to_dict(), "duplicate": True}, 200
     else:
         resident_id = data.get("resident_id")
         vendor_id = data.get("vendor_id")
@@ -167,6 +193,27 @@ def create_order():
             order.accepted_at = datetime.utcnow()
         else:
             order.status = "open"
+
+    # Admin-posted orders can also be double-submitted. Include the selected
+    # resident/vendor in the fingerprint so intentionally identical orders for
+    # different residents are still allowed.
+    duplicate_query = (
+        WorkOrder.query
+        .filter(
+            WorkOrder.title == title,
+            WorkOrder.category == category,
+            WorkOrder.description == description,
+            WorkOrder.amount == amount,
+            WorkOrder.due_date == due_date,
+            WorkOrder.resident_id == order.resident_id,
+            WorkOrder.vendor_id == order.vendor_id,
+            WorkOrder.created_at >= recent_cutoff,
+        )
+        .order_by(WorkOrder.id.desc())
+    )
+    duplicate = duplicate_query.first()
+    if duplicate is not None:
+        return {"work_order": duplicate.to_dict(), "duplicate": True}, 200
 
     db.session.add(order)
     db.session.commit()
