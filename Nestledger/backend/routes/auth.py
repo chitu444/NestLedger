@@ -25,16 +25,6 @@ def get_current_user():
     return current_user()
 
 
-def user_payload(user):
-    """Serialize the signed-in user with vendor-specific profile context."""
-    data = user.to_dict()
-    if user.role == "vendor":
-        vendor = Vendor.query.filter_by(user_id=user.id).first()
-        data["job_title"] = vendor.service if vendor else None
-        data["vendor_status"] = vendor.status if vendor else None
-    return data
-
-
 @auth_bp.post("/auth/register")
 def register():
     data = request.get_json(silent=True) or {}
@@ -121,7 +111,7 @@ def register():
             notif_type="payment",
         )
 
-    return {"message": "Account created successfully", "user": user_payload(user)}, 201
+    return {"message": "Account created successfully", "user": user.to_dict()}, 201
 
 
 @auth_bp.post("/auth/login")
@@ -147,7 +137,7 @@ def login():
         return {"error": "Invalid email or password"}, 401
 
     token = create_access_token(identity=str(user.id))
-    return {"message": "Login successful", "token": token, "user": user_payload(user)}
+    return {"message": "Login successful", "token": token, "user": user.to_dict()}
 
 
 @auth_bp.post("/auth/forgot-password")
@@ -186,7 +176,7 @@ def me():
     user = get_current_user()
     if user is None:
         return {"error": "User not found"}, 404
-    return {"user": user_payload(user)}
+    return {"user": user.to_dict()}
 
 
 @auth_bp.put("/auth/profile")
@@ -217,4 +207,4 @@ def profile():
         user.apartment = apartment or None
 
     db.session.commit()
-    return {"user": user_payload(user)}
+    return {"user": user.to_dict()}

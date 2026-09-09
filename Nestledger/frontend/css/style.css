@@ -749,3 +749,518 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .vendor-hero-side span{display:block;font-family:Georgia,'Times New Roman',serif;font-size:12px;color:#d6e2d9;line-height:1.4;}
 @media(max-width:700px){.vendor-hero{grid-template-columns:1fr;gap:20px;padding:28px 22px;}.vendor-hero-side{border-left:0;border-top:1px solid rgba(255,255,255,.22);padding:18px 0 0;}.vendor-hero-main h2,.vendor-hero-side b{font-size:36px;}}
 
+
+/* ===== Resident / auth theme toggle ===== */
+.auth-tools{position:absolute;top:28px;right:28px;display:flex;align-items:center;gap:8px;z-index:2}
+.auth-panel>.auth-tools .lang-select{position:static}
+.theme-toggle{width:38px;height:38px;border:1px solid var(--line);border-radius:50%;background:var(--card);color:var(--ink);display:grid;place-items:center;padding:0;box-shadow:0 5px 18px rgba(22,34,29,.06);transition:transform .18s ease,background .18s ease,border-color .18s ease,color .18s ease}
+.theme-toggle:hover{transform:translateY(-1px);border-color:rgba(83,107,85,.28)}
+.theme-toggle svg{width:16px;height:16px;stroke-width:1.8}
+.topbar-actions>.theme-toggle{flex:0 0 38px}
+
+/* Resident hero: quiet editorial split with equal headline sizing. */
+.resident-hero{display:grid;grid-template-columns:minmax(0,1fr) 1px minmax(0,1fr);align-items:center;gap:26px}
+.resident-hero-metric{text-align:center;min-width:0}
+.resident-hero-metric h2,.resident-hero-metric b{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400;font-size:36px;line-height:1.05;letter-spacing:-.4px}
+.resident-hero-metric h2{margin:8px 0 6px}
+.resident-hero-metric b{display:block;margin-top:8px}
+.resident-hero-metric p{margin:0;color:#d6e2d9}
+.resident-hero-metric small{font-family:'DM Sans',sans-serif;font-size:10px;letter-spacing:1.6px;text-transform:uppercase;opacity:.74}
+.resident-hero-divider{width:1px;height:64px;background:rgba(255,255,255,.30);justify-self:center}
+
+/* ===== Dark mode: direct visual translation of the supplied CSS Zen Garden reference ===== */
+html[data-theme="dark"]{color-scheme:dark;--ink:#eee8df;--muted:#c0b6a9;--line:#4b434c;--bg:#211e24;--card:#2b272e;--accent:#b7a5df;--accent2:#40374a;--danger:#e59a95;--gold:#d0ae72;--shadow:0 18px 50px rgba(0,0,0,.34)}
+html[data-theme="dark"] body{background:var(--bg);color:var(--ink)}
+html[data-theme="dark"] .auth{background:#211e24}
+html[data-theme="dark"] .auth-art{background:radial-gradient(circle at 78% 22%,rgba(183,165,223,.18),transparent 30%),linear-gradient(145deg,#2b2530,#3a303a);color:#f0e9df}
+html[data-theme="dark"] .auth-art:after{border-color:rgba(183,165,223,.22)}
+html[data-theme="dark"] .art-copy h1{color:#eee8df}
+html[data-theme="dark"] .art-copy p{color:#cfc5ba}
+html[data-theme="dark"] .mini{border-color:rgba(183,165,223,.20);background:rgba(183,165,223,.07)}
+html[data-theme="dark"] .mini small{color:#c8beb3}
+html[data-theme="dark"] .auth-panel{background:#211e24}
+html[data-theme="dark"] .auth-card,
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] .stat,
+html[data-theme="dark"] .list-card,
+html[data-theme="dark"] .notice,
+html[data-theme="dark"] .receipt-card,
+html[data-theme="dark"] .form-card,
+html[data-theme="dark"] .profile-box,
+html[data-theme="dark"] .modal,
+html[data-theme="dark"] .action-card{background:#2b272e;border-color:#4b434c;color:#eee8df;box-shadow:var(--shadow)}
+html[data-theme="dark"] .sidebar{background:#262229;border-color:#4b434c;box-shadow:4px 0 22px rgba(0,0,0,.20)}
+html[data-theme="dark"] .side-brand small,
+html[data-theme="dark"] .topbar p,
+html[data-theme="dark"] .muted,
+html[data-theme="dark"] .list-row p,
+html[data-theme="dark"] .stat em,
+html[data-theme="dark"] .sub,
+html[data-theme="dark"] .switch-link,
+html[data-theme="dark"] .small-note,
+html[data-theme="dark"] .profile-top-copy small,
+html[data-theme="dark"] .section-label{color:#c0b6a9}
+html[data-theme="dark"] .brand,
+html[data-theme="dark"] .topbar h1,
+html[data-theme="dark"] .page-title h2,
+html[data-theme="dark"] .panel h3,
+html[data-theme="dark"] .auth-card h2,
+html[data-theme="dark"] .list-row h4,
+html[data-theme="dark"] .modal h3{color:#eee8df}
+html[data-theme="dark"] .nav button{color:#c2b9b0}
+html[data-theme="dark"] .nav button.active,
+html[data-theme="dark"] .nav button:hover{background:rgba(183,165,223,.12);color:#d4c5ef}
+html[data-theme="dark"] .nav button.active:before{background:#b7a5df}
+html[data-theme="dark"] .profile-top,
+html[data-theme="dark"] .logout-top,
+html[data-theme="dark"] .secondary,
+html[data-theme="dark"] .theme-toggle,
+html[data-theme="dark"] .role-btn,
+html[data-theme="dark"] .field input,
+html[data-theme="dark"] .field select,
+html[data-theme="dark"] .field textarea,
+html[data-theme="dark"] .list-search,
+html[data-theme="dark"] .list-controls select{background:#342f37;color:#eee8df;border-color:#554c57}
+html[data-theme="dark"] .profile-top:hover,
+html[data-theme="dark"] .logout-top:hover{background:#403943}
+html[data-theme="dark"] .role-btn.active{background:#453a50;color:#d9cdf0;border-color:#7c6a91}
+html[data-theme="dark"] .field input::placeholder,
+html[data-theme="dark"] .field textarea::placeholder,
+html[data-theme="dark"] .list-search input::placeholder{color:#948a82}
+html[data-theme="dark"] .field input:focus,
+html[data-theme="dark"] .field textarea:focus{border-color:#b7a5df;box-shadow:0 0 0 3px rgba(183,165,223,.16)}
+html[data-theme="dark"] .profile-chip{background:#332e36;border-color:#4b434c}
+html[data-theme="dark"] .activity,
+html[data-theme="dark"] .table th,
+html[data-theme="dark"] .table td{border-color:#453e47}
+html[data-theme="dark"] .activity .dot{background:#40374a;color:#d4c5ef}
+html[data-theme="dark"] .hero,
+html[data-theme="dark"] .vendor-hero{background:linear-gradient(135deg,#382e3d,#51405a);color:#f2ece4;box-shadow:var(--shadow)}
+html[data-theme="dark"] .hero p,
+html[data-theme="dark"] .resident-hero-metric p,
+html[data-theme="dark"] .vendor-hero-side span{color:#d4cbc0}
+html[data-theme="dark"] .resident-hero-divider{background:rgba(220,208,232,.34)}
+html[data-theme="dark"] .live{background:rgba(183,165,223,.14);color:#d6c9ef}
+html[data-theme="dark"] .toast{background:#f0e9df;color:#2b272e}
+html[data-theme="dark"] .error{background:#402a2b;color:#f0b5b0;border-color:#694143}
+html[data-theme="dark"] .empty,
+html[data-theme="dark"] .empty-state{color:#c0b6a9}
+html[data-theme="dark"] .notice .tag,
+html[data-theme="dark"] .text-link,
+html[data-theme="dark"] .text-button{color:#cbbbe9}
+html[data-theme="dark"] .notice p{color:#c0b6a9}
+html[data-theme="dark"] .close{background:#403a42;color:#eee8df;border-color:#554c57}
+html[data-theme="dark"] .pay,
+html[data-theme="dark"] .btn-row .accept{background:#9d89c4;color:#211e24}
+html[data-theme="dark"] .btn-row .start{background:#453a50;color:#d8ccef}
+html[data-theme="dark"] .btn-row .finish{background:#403b36;color:#d9c7a8}
+html[data-theme="dark"] .btn-row .cancel{background:#472d2e;color:#f0b5b0}
+html[data-theme="dark"] .badge.paid,
+html[data-theme="dark"] .badge.resolved,
+html[data-theme="dark"] .badge.closed,
+html[data-theme="dark"] .badge.completed{background:#403b36;color:#dccaa9}
+html[data-theme="dark"] .badge.pending,
+html[data-theme="dark"] .badge.open{background:#493d2d;color:#e2c58e}
+html[data-theme="dark"] .badge.progress,
+html[data-theme="dark"] .badge.accepted,
+html[data-theme="dark"] .badge.in_progress{background:#443b52;color:#d7c8ee}
+html[data-theme="dark"] .badge.danger,
+html[data-theme="dark"] .badge.cancelled{background:#472d2e;color:#efb2ad}
+html[data-theme="dark"] .chatbot-panel,
+html[data-theme="dark"] .chatbot-body,
+html[data-theme="dark"] .chatbot-header,
+html[data-theme="dark"] .chatbot-footer,
+html[data-theme="dark"] .chatbot-chips{background:#29252c;color:#eee8df;border-color:#4b434c}
+html[data-theme="dark"] .chatbot-msg.assistant,
+html[data-theme="dark"] .chatbot-typing{background:#39333c;color:#eee8df;border-color:#514852}
+html[data-theme="dark"] .chatbot-input,
+html[data-theme="dark"] .chatbot-chip{background:#342f37;color:#eee8df;border-color:#554c57}
+html[data-theme="dark"] .chatbot-icon-btn{background:#403943;color:#d7c8ee}
+html[data-theme="dark"] .shortcut{background:rgba(183,165,223,.06);border-color:rgba(183,165,223,.18);color:#d5c7ed}
+html[data-theme="dark"] .list-search{background:#342f37}
+html[data-theme="dark"] .bi-bar-row>b,
+html[data-theme="dark"] .bi-month>b,
+html[data-theme="dark"] .bi-month>small,
+html[data-theme="dark"] .bi-vendor small{color:#c0b6a9}
+html[data-theme="dark"] .bi-bars i{background:#b7a5df}
+html[data-theme="dark"] .bi-bars em{background:rgba(192,182,169,.30)}
+html[data-theme="dark"] .bi-bar-row>i{background:rgba(192,182,169,.14)}
+html[data-theme="dark"] .bi-bar-row>i em{background:#b7a5df}
+html[data-theme="dark"] .bi-insight{border-color:#b7a5df;background:rgba(183,165,223,.08);color:#d3c8bb}
+html[data-theme="dark"] .bi-vendor{border-color:#453e47}
+html[data-theme="dark"] .bi-vendor strong{color:#d6c8b9}
+html[data-theme="dark"] .theme-toggle{color:#d9ccef;border-color:#62576a;box-shadow:0 5px 18px rgba(0,0,0,.20)}
+html[data-theme="dark"] .theme-toggle:hover{border-color:#b7a5df;background:#3d3543}
+html[data-theme="dark"] .bell-btn{color:#d6c8ed}
+html[data-theme="dark"] .notif-panel,
+html[data-theme="dark"] .notif-item{background:#2b272e;color:#eee8df;border-color:#4b434c}
+html[data-theme="dark"] .notif-item p{color:#c0b6a9}
+html[data-theme="dark"] a{color:#b7a5df}
+html[data-theme="dark"] a:visited{color:#d4cddc}
+html[data-theme="dark"] a:hover{color:#d8c8f1}
+html[data-theme="dark"] ::selection{background:#b7a5df;color:#211e24}
+
+@media(max-width:700px){
+  .auth-tools{top:18px;right:18px}
+  .resident-hero{grid-template-columns:1fr;gap:16px}
+  .resident-hero-divider{width:64px;height:1px}
+  .resident-hero-metric h2,.resident-hero-metric b{font-size:34px}
+}
+
+/* === Dark mode clarity pass ===
+   The light theme above is intentionally untouched. Dark mode uses a single,
+   high-contrast Zen Garden-inspired palette so text never sits on a light surface. */
+html[data-theme="dark"]{
+  --ink:#eee7dc;
+  --muted:#c2b7aa;
+  --line:#514853;
+  --bg:#211d23;
+  --card:#2b252d;
+  --accent:#b7a5df;
+  --accent2:#46394f;
+  --moss:#d8cbed;
+  --danger:#efaaa5;
+  --gold:#dfc48f;
+  --shadow:0 18px 50px rgba(0,0,0,.38);
+}
+html[data-theme="dark"] body{background:var(--bg);color:var(--ink);}
+
+/* Every major surface becomes genuinely dark. */
+html[data-theme="dark"] .auth,
+html[data-theme="dark"] .auth-panel,
+html[data-theme="dark"] .main{background:var(--bg);color:var(--ink);}
+html[data-theme="dark"] .sidebar{background:#262129!important;border-color:var(--line)!important;}
+html[data-theme="dark"] .auth-card,
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] .stat,
+html[data-theme="dark"] .list-card,
+html[data-theme="dark"] .notice,
+html[data-theme="dark"] .receipt-card,
+html[data-theme="dark"] .attention-card,
+html[data-theme="dark"] .action-card,
+html[data-theme="dark"] .form-card,
+html[data-theme="dark"] .profile-box,
+html[data-theme="dark"] .modal,
+html[data-theme="dark"] .mini-stat,
+html[data-theme="dark"] .workorder-stat,
+html[data-theme="dark"] .bi-kpi,
+html[data-theme="dark"] .resident-directory,
+html[data-theme="dark"] .resident-card{
+  background:#2b252d!important;
+  color:var(--ink)!important;
+  border-color:var(--line)!important;
+  box-shadow:var(--shadow);
+}
+
+/* Directory cards were the main source of invisible text in dark mode. */
+html[data-theme="dark"] .resident-directory{background:#29242b!important;}
+html[data-theme="dark"] .resident-card{background:#332d35!important;}
+html[data-theme="dark"] .resident-card b,
+html[data-theme="dark"] .resident-card span,
+html[data-theme="dark"] .resident-card small{color:var(--ink)!important;}
+html[data-theme="dark"] .resident-card small{color:#c8bdb1!important;}
+html[data-theme="dark"] .resident-card:hover{background:#3a323d!important;border-color:#766887!important;}
+
+/* Typography: warm parchment for primary text, muted beige for supporting copy. */
+html[data-theme="dark"] .brand,
+html[data-theme="dark"] .topbar h1,
+html[data-theme="dark"] .page-title h2,
+html[data-theme="dark"] .panel h3,
+html[data-theme="dark"] .auth-card h2,
+html[data-theme="dark"] .list-row h4,
+html[data-theme="dark"] .modal h3,
+html[data-theme="dark"] .notice h3,
+html[data-theme="dark"] .notice-enhanced h3,
+html[data-theme="dark"] .receipt-main h3,
+html[data-theme="dark"] .detail-head h2,
+html[data-theme="dark"] .empty-state h4,
+html[data-theme="dark"] .notice-strip h4,
+html[data-theme="dark"] .profile-hero h3{color:#eee7dc!important;}
+html[data-theme="dark"] .topbar p,
+html[data-theme="dark"] .page-title p,
+html[data-theme="dark"] .muted,
+html[data-theme="dark"] .small-note,
+html[data-theme="dark"] .list-row p,
+html[data-theme="dark"] .stat em,
+html[data-theme="dark"] .notice p,
+html[data-theme="dark"] .notice-enhanced p,
+html[data-theme="dark"] .receipt-main p,
+html[data-theme="dark"] .receipt-main small,
+html[data-theme="dark"] .detail-head p,
+html[data-theme="dark"] .section-label,
+html[data-theme="dark"] .empty,
+html[data-theme="dark"] .empty-state p,
+html[data-theme="dark"] .mini-stat small,
+html[data-theme="dark"] .workorder-stat span,
+html[data-theme="dark"] .profile-top-copy small,
+html[data-theme="dark"] .side-brand small{color:#c2b7aa!important;}
+html[data-theme="dark"] .mini-stat span,
+html[data-theme="dark"] .table th{color:#a99d91!important;}
+
+/* Reference-style lavender/olive-brown accent family; no green controls in dark mode. */
+html[data-theme="dark"] a,
+html[data-theme="dark"] .text-link,
+html[data-theme="dark"] .text-button,
+html[data-theme="dark"] .notice .tag,
+html[data-theme="dark"] .eyebrow-dark{color:#b7a5df!important;}
+html[data-theme="dark"] a:visited{color:#d4cddc!important;}
+html[data-theme="dark"] a:hover,
+html[data-theme="dark"] .text-link:hover,
+html[data-theme="dark"] .text-button:hover{color:#d8c9ef!important;}
+
+/* Navigation and account controls. */
+html[data-theme="dark"] .nav{border-color:rgba(183,165,223,.18);}
+html[data-theme="dark"] .nav button{color:#c9bfb4!important;border-color:rgba(183,165,223,.13)!important;}
+html[data-theme="dark"] .nav button:hover{background:rgba(183,165,223,.09)!important;color:#e0d4ef!important;}
+html[data-theme="dark"] .nav button.active{background:rgba(183,165,223,.14)!important;color:#cbb8eb!important;}
+html[data-theme="dark"] .nav button.active:before{background:#b7a5df!important;}
+html[data-theme="dark"] .profile-top,
+html[data-theme="dark"] .logout-top,
+html[data-theme="dark"] .bell-btn,
+html[data-theme="dark"] .theme-toggle,
+html[data-theme="dark"] .secondary,
+html[data-theme="dark"] .role-btn,
+html[data-theme="dark"] .shortcut{
+  background:#332d35!important;color:#eee7dc!important;border-color:#554b58!important;
+}
+html[data-theme="dark"] .profile-top:hover,
+html[data-theme="dark"] .logout-top:hover,
+html[data-theme="dark"] .secondary:hover,
+html[data-theme="dark"] .shortcut:hover{background:#403744!important;border-color:#756681!important;}
+html[data-theme="dark"] .logout-top{color:#efaaa5!important;border-color:#68484c!important;}
+html[data-theme="dark"] .bell-btn{color:#d8caee!important;}
+html[data-theme="dark"] .topbar-divider{background:#514853!important;}
+
+/* Forms/search: dark controls with clear field text and placeholder contrast. */
+html[data-theme="dark"] .field input,
+html[data-theme="dark"] .field select,
+html[data-theme="dark"] .field textarea,
+html[data-theme="dark"] .list-search,
+html[data-theme="dark"] .list-search input,
+html[data-theme="dark"] .list-controls select,
+html[data-theme="dark"] .status-select,
+html[data-theme="dark"] .chatbot-input{
+  background:#332d35!important;color:#eee7dc!important;border-color:#5a505d!important;
+}
+html[data-theme="dark"] .field input::placeholder,
+html[data-theme="dark"] .field textarea::placeholder,
+html[data-theme="dark"] .list-search input::placeholder{color:#9f9389!important;}
+html[data-theme="dark"] .field input:focus,
+html[data-theme="dark"] .field textarea:focus,
+html[data-theme="dark"] .list-search:focus-within{border-color:#b7a5df!important;box-shadow:0 0 0 3px rgba(183,165,223,.16)!important;}
+html[data-theme="dark"] .role-btn.active{background:#493d53!important;color:#ded1ef!important;border-color:#806d93!important;}
+
+/* Buttons: explicitly override legacy green/moss rules. */
+html[data-theme="dark"] .primary,
+html[data-theme="dark"] .pay,
+html[data-theme="dark"] .btn-row .accept,
+html[data-theme="dark"] .chatbot-fab,
+html[data-theme="dark"] .voice-mic{
+  background:#8f79b6!important;color:#17131a!important;border-color:#8f79b6!important;
+}
+html[data-theme="dark"] .primary:hover,
+html[data-theme="dark"] .pay:hover,
+html[data-theme="dark"] .btn-row .accept:hover,
+html[data-theme="dark"] .chatbot-fab:hover,
+html[data-theme="dark"] .voice-mic:hover{background:#a18bc6!important;color:#17131a!important;}
+html[data-theme="dark"] .btn-row .start{background:#46394f!important;color:#d9cbee!important;}
+html[data-theme="dark"] .btn-row .finish{background:#4b4339!important;color:#e0cda7!important;}
+html[data-theme="dark"] .btn-row .cancel{background:#4b3033!important;color:#f1b3ae!important;}
+html[data-theme="dark"] .action-card .action-icon,
+html[data-theme="dark"] .attention-icon,
+html[data-theme="dark"] .notice-icon,
+html[data-theme="dark"] .receipt-icon,
+html[data-theme="dark"] .activity-icon{background:#46394f!important;color:#cdbbea!important;border-color:#62546c!important;}
+
+/* Data surfaces and separators. */
+html[data-theme="dark"] .table th,
+html[data-theme="dark"] .table td,
+html[data-theme="dark"] .activity,
+html[data-theme="dark"] .activity-item,
+html[data-theme="dark"] .issue-footer,
+html[data-theme="dark"] .health-row,
+html[data-theme="dark"] .bi-chart{border-color:#48414b!important;}
+html[data-theme="dark"] .table td{color:#e1d9cf!important;}
+html[data-theme="dark"] .table tbody tr:hover{background:rgba(183,165,223,.055)!important;}
+html[data-theme="dark"] .unit-pill{background:#403943!important;color:#d0c5ba!important;}
+html[data-theme="dark"] .health-meter,
+html[data-theme="dark"] .bi-bar-row>i{background:#403943!important;}
+html[data-theme="dark"] .health-meter div,
+html[data-theme="dark"] .bi-bar-row>i em,
+html[data-theme="dark"] .bi-bars i{background:#b7a5df!important;}
+html[data-theme="dark"] .bi-bars em{background:rgba(194,183,170,.30)!important;}
+html[data-theme="dark"] .bi-kpi b,
+html[data-theme="dark"] .bi-bar-row>b,
+html[data-theme="dark"] .bi-vendor strong,
+html[data-theme="dark"] .finance-lines b{color:#d9cbed!important;}
+html[data-theme="dark"] .finance-lines>div{background:#332d35!important;border-color:#514853!important;}
+html[data-theme="dark"] .bi-insight{background:rgba(183,165,223,.09)!important;color:#d7ccbf!important;border-color:#b7a5df!important;}
+html[data-theme="dark"] .bi-vendor{border-color:#48414b!important;}
+
+/* Hero surfaces use the same muted plum/lavender family. */
+html[data-theme="dark"] .hero,
+html[data-theme="dark"] .admin-hero,
+html[data-theme="dark"] .vendor-hero{
+  background:linear-gradient(135deg,#322936,#4b3b50)!important;color:#f1e9df!important;
+}
+html[data-theme="dark"] .hero p,
+html[data-theme="dark"] .resident-hero-metric p,
+html[data-theme="dark"] .vendor-hero-side span,
+html[data-theme="dark"] .admin-hero-metric small,
+html[data-theme="dark"] .admin-hero-center span{color:#d2c6ba!important;}
+html[data-theme="dark"] .resident-hero-divider{background:rgba(216,203,237,.38)!important;}
+
+/* Status badges retain meaning without reverting to green. */
+html[data-theme="dark"] .badge.paid,
+html[data-theme="dark"] .badge.resolved,
+html[data-theme="dark"] .badge.closed,
+html[data-theme="dark"] .badge.completed{background:#433d38!important;color:#e0cda7!important;}
+html[data-theme="dark"] .badge.pending,
+html[data-theme="dark"] .badge.open{background:#493e2f!important;color:#e2c78f!important;}
+html[data-theme="dark"] .badge.progress,
+html[data-theme="dark"] .badge.accepted,
+html[data-theme="dark"] .badge.in_progress{background:#46394f!important;color:#d9caee!important;}
+html[data-theme="dark"] .badge.danger,
+html[data-theme="dark"] .badge.cancelled{background:#4b3033!important;color:#f0b1ac!important;}
+
+/* Chatbot/notifications/modals. */
+html[data-theme="dark"] .chatbot-panel,
+html[data-theme="dark"] .chatbot-body,
+html[data-theme="dark"] .chatbot-header,
+html[data-theme="dark"] .chatbot-footer,
+html[data-theme="dark"] .chatbot-chips,
+html[data-theme="dark"] .notif-panel,
+html[data-theme="dark"] .notif-item{background:#2b252d!important;color:#eee7dc!important;border-color:#514853!important;}
+html[data-theme="dark"] .chatbot-msg.assistant,
+html[data-theme="dark"] .chatbot-typing{background:#3a333c!important;color:#eee7dc!important;border-color:#514853!important;}
+html[data-theme="dark"] .chatbot-chip,
+html[data-theme="dark"] .chatbot-icon-btn{background:#403743!important;color:#d9cbed!important;border-color:#5a4f63!important;}
+html[data-theme="dark"] .notif-item p{color:#c2b7aa!important;}
+html[data-theme="dark"] .close{background:#403743!important;color:#eee7dc!important;border-color:#5a4f63!important;}
+html[data-theme="dark"] #toast{background:#eee7dc!important;color:#2b252d!important;}
+html[data-theme="dark"] .error,
+html[data-theme="dark"] .inline-error{background:#4b3033!important;color:#f0b1ac!important;border-color:#70474b!important;}
+
+/* Theme transition: applied only while the user is switching themes. */
+html.theme-transition,
+html.theme-transition body,
+html.theme-transition .sidebar,
+html.theme-transition .main,
+html.theme-transition .auth,
+html.theme-transition .auth-panel,
+html.theme-transition .auth-card,
+html.theme-transition .panel,
+html.theme-transition .stat,
+html.theme-transition .list-card,
+html.theme-transition .notice,
+html.theme-transition .receipt-card,
+html.theme-transition .form-card,
+html.theme-transition .profile-box,
+html.theme-transition .modal,
+html.theme-transition .resident-card,
+html.theme-transition .action-card,
+html.theme-transition .attention-card,
+html.theme-transition .mini-stat,
+html.theme-transition .workorder-stat,
+html.theme-transition .field input,
+html.theme-transition .field select,
+html.theme-transition .field textarea,
+html.theme-transition .list-search,
+html.theme-transition .list-controls select,
+html.theme-transition .primary,
+html.theme-transition .secondary,
+html.theme-transition .pay,
+html.theme-transition .nav button,
+html.theme-transition .profile-top,
+html.theme-transition .logout-top,
+html.theme-transition .bell-btn,
+html.theme-transition .theme-toggle,
+html.theme-transition .chatbot-panel,
+html.theme-transition .chatbot-body,
+html.theme-transition .chatbot-header,
+html.theme-transition .chatbot-footer{
+  transition:background-color .38s ease,color .38s ease,border-color .38s ease,box-shadow .38s ease!important;
+}
+html.theme-transition .theme-toggle svg{transition:transform .38s ease,opacity .2s ease!important;}
+html.theme-transition .theme-toggle:hover svg{transform:rotate(18deg);}
+@media(prefers-reduced-motion:reduce){
+  html.theme-transition *{transition:none!important;}
+}
+
+
+/* === Final dark-theme clarity: vendor performance + language controls === */
+html[data-theme="dark"] .perf-card{
+  background:#2b252d!important;
+  color:#eee7dc!important;
+  border:1px solid #514853!important;
+  box-shadow:0 18px 50px rgba(0,0,0,.30)!important;
+}
+html[data-theme="dark"] .perf-card .perf-head b{
+  color:#eee7dc!important;
+}
+html[data-theme="dark"] .perf-card .perf-score{
+  color:#cbb7ed!important;
+}
+html[data-theme="dark"] .perf-metrics div{
+  background:#332d35!important;
+  border:1px solid #48414b!important;
+}
+html[data-theme="dark"] .perf-metrics small{
+  color:#bdb1a5!important;
+}
+html[data-theme="dark"] .perf-metrics b{
+  color:#f0e9df!important;
+}
+html[data-theme="dark"] .perf-card .muted{
+  color:#c2b7aa!important;
+}
+
+/* Language selectors use the same dark paper/plum surface everywhere. */
+html[data-theme="dark"] .lang-select,
+html[data-theme="dark"] .side-brand .lang-select,
+html[data-theme="dark"] .auth-panel .lang-select{
+  background:#332d35!important;
+  color:#eee7dc!important;
+  border-color:#5a505d!important;
+  color-scheme:dark;
+  box-shadow:none!important;
+}
+html[data-theme="dark"] .lang-select:hover,
+html[data-theme="dark"] .lang-select:focus{
+  background:#3b333f!important;
+  color:#f2ebe2!important;
+  border-color:#8b78a8!important;
+  outline:none!important;
+}
+html[data-theme="dark"] .lang-select option{
+  background:#2b252d!important;
+  color:#eee7dc!important;
+}
+
+/* Theme transition: smoothly interpolate the existing light theme into the
+   Zen Garden-inspired dark palette without changing either theme's design. */
+html.theme-transition,
+html.theme-transition body,
+html.theme-transition body *{
+  transition:
+    background-color .42s cubic-bezier(.22,.61,.36,1),
+    color .42s cubic-bezier(.22,.61,.36,1),
+    border-color .42s cubic-bezier(.22,.61,.36,1),
+    box-shadow .42s cubic-bezier(.22,.61,.36,1),
+    fill .42s cubic-bezier(.22,.61,.36,1),
+    stroke .42s cubic-bezier(.22,.61,.36,1) !important;
+}
+html.theme-transition .theme-toggle svg{
+  animation:nl-theme-icon .42s ease both;
+}
+@keyframes nl-theme-icon{
+  0%{opacity:.35;transform:rotate(-28deg) scale(.82)}
+  55%{opacity:1;transform:rotate(12deg) scale(1.08)}
+  100%{opacity:1;transform:rotate(0deg) scale(1)}
+}
+@media(prefers-reduced-motion:reduce){
+  html.theme-transition,
+  html.theme-transition body,
+  html.theme-transition body *{transition:none!important}
+  html.theme-transition .theme-toggle svg{animation:none!important}
+}

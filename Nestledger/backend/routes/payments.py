@@ -7,8 +7,8 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from flask import Blueprint, current_app, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user_id
-from utils.pagination import paginate_query
 from utils.audit import record
+from utils.pagination import paginate_query
 
 from models.db import db
 from models.notification import notify

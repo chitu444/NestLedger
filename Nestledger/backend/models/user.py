@@ -39,7 +39,7 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def to_dict(self):
-        return {
+        data = {
             "id": self.id,
             "name": self.name,
             "email": self.email,
@@ -48,3 +48,10 @@ class User(db.Model):
             "apartment": self.apartment,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+        # Vendors get their actual trade/job title in the session payload so the
+        # profile chip can show e.g. Plumber instead of the generic Vendor label.
+        if self.role == "vendor":
+            vendor = getattr(self, "vendor_profile", None)
+            if vendor is not None:
+                data["job_title"] = vendor.service
+        return data
