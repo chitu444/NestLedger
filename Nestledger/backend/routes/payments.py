@@ -73,6 +73,19 @@ def create_payment_order(*, uid, amount, description, receipt, notes, bill_id=No
     if amount_paise is None:
         return None, ({"error": "Payment amount must be at least ₹1.00 and must be a valid number."}, 400)
 
+    # Razorpay enforces a per-order maximum that can vary by account.
+    # Default to the standard ₹5,00,000 ceiling and allow the merchant to
+    # raise/lower it explicitly if Razorpay has configured a different limit.
+    try:
+        max_order_rupees = Decimal(str(current_app.config.get("RAZORPAY_MAX_ORDER_AMOUNT_INR", "500000")))
+    except (InvalidOperation, TypeError, ValueError):
+        max_order_rupees = Decimal("500000")
+    if Decimal(str(amount)) > max_order_rupees:
+        return None, ({
+            "error": f"This payment amount is above the Razorpay order limit of ₹{max_order_rupees:,.2f}. "
+                     "Reduce the bill amount or ask Razorpay to increase your account's per-order limit."
+        }, 400)
+
     # Razorpay requires a unique receipt of at most 40 characters.
     receipt = str(receipt or "").strip()[:32] + "-" + uuid.uuid4().hex[:7]
     notes = {str(k)[:255]: str(v)[:512] for k, v in (notes or {}).items()}
@@ -104,8 +117,14 @@ def create_payment_order(*, uid, amount, description, receipt, notes, bill_id=No
         return None, ({"error": "The payment order was created but could not be saved. Please try again."}, 503)
     except Exception as exc:
         db.session.rollback()
+        message = _provider_error(exc)
         current_app.logger.exception("Razorpay order creation failed")
-        return None, ({"error": _provider_error(exc)}, 502)
+        if "amount exceeds maximum amount allowed" in message.lower():
+            return None, ({
+                "error": "Razorpay rejected this amount because it exceeds the per-order limit configured for your account. "
+                         "Reduce the amount or ask Razorpay Support to raise the limit."
+            }, 400)
+        return None, ({"error": message}, 502)
 
 
 @payments_bp.get("/bills")

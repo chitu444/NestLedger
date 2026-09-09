@@ -51,7 +51,13 @@ class User(db.Model):
         # Vendors get their actual trade/job title in the session payload so the
         # profile chip can show e.g. Plumber instead of the generic Vendor label.
         if self.role == "vendor":
-            vendor = getattr(self, "vendor_profile", None)
+            # Do not rely on the generated backref here. Older database/model
+            # states can expose vendor_profile as an InstrumentedList, while a
+            # user is intended to have exactly one vendor profile. Querying by
+            # the unique user_id keeps login serialization robust across those
+            # states and avoids turning a successful login into a 500.
+            from models.vendor import Vendor
+            vendor = Vendor.query.filter_by(user_id=self.id).first()
             if vendor is not None:
                 data["job_title"] = vendor.service
         return data
