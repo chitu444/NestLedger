@@ -40,7 +40,7 @@ The runner is safe to repeat. PostgreSQL migrations are serialized with a transa
 
 ### 2. Deploy the same commit to Vercel
 
-Deploy only after the migration command reports the latest version as applied. The application also performs a startup migration check as a safety net.
+Deploy only after the migration command reports the latest version as applied. In production, schema creation, migrations, and admin seeding are disabled at function startup by default. Run the migration runner explicitly before deployment. The health probe then verifies that the expected migration version is present.
 
 ### 3. Verify the live deployment
 

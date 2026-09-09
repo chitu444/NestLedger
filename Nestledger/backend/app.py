@@ -124,11 +124,14 @@ def seed_admin() -> None:
 
 with app.app_context():
     (BASE_DIR / "database").mkdir(parents=True, exist_ok=True)
-    if os.getenv("RUN_DB_CREATE_ALL_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
+    create_all_default = "0" if app_env == "production" else "1"
+    migrations_default = "0" if app_env == "production" else "1"
+    seed_default = "0" if app_env == "production" else "1"
+    if os.getenv("RUN_DB_CREATE_ALL_ON_STARTUP", create_all_default).lower() not in {"0", "false", "no"}:
         db.create_all()
-    if os.getenv("RUN_MIGRATIONS_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
+    if os.getenv("RUN_MIGRATIONS_ON_STARTUP", migrations_default).lower() not in {"0", "false", "no"}:
         run_migrations()
-    if os.getenv("RUN_ADMIN_SEED_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
+    if os.getenv("RUN_ADMIN_SEED_ON_STARTUP", seed_default).lower() not in {"0", "false", "no"}:
         seed_admin()
 
 
