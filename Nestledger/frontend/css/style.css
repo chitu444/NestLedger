@@ -1264,3 +1264,60 @@ html.theme-transition .theme-toggle svg{
   html.theme-transition body *{transition:none!important}
   html.theme-transition .theme-toggle svg{animation:none!important}
 }
+
+/* === Admin dashboard symmetry + editorial typography refinement === */
+/* Keep each dashboard row visually balanced: both panels in a row share the
+   same width and stretch to the height of the taller panel. */
+.admin-overview-grid,
+.admin-lower-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  align-items:stretch!important;
+}
+.admin-overview-grid>.panel,
+.admin-lower-grid>.panel{
+  height:100%!important;
+  align-self:stretch!important;
+  box-sizing:border-box;
+}
+
+/* One consistent type system across the admin dashboard panels. */
+.admin-overview-grid .panel h3,
+.admin-lower-grid .panel h3,
+.admin-overview-grid .panel-head h3,
+.admin-lower-grid .panel-head h3{
+  font-family:Georgia,'Times New Roman',serif!important;
+  font-style:italic!important;
+  font-weight:400!important;
+  font-size:20px!important;
+  line-height:1.2!important;
+}
+.admin-overview-grid .panel,
+.admin-lower-grid .panel{
+  font-family:Georgia,'Times New Roman',serif;
+}
+.finance-lines span,
+.status-bars>div,
+.activity-item p,
+.activity-item time{
+  font-family:Georgia,'Times New Roman',serif!important;
+}
+.finance-lines span{font-size:12px!important;letter-spacing:.05em!important}
+.finance-lines b{font-family:Georgia,'Times New Roman',serif!important;font-size:18px!important;font-weight:400!important}
+.status-bars>div{font-size:12px!important}
+.activity-panel .activity-item b{font-family:Georgia,'Times New Roman',serif!important;font-size:15px!important;line-height:1.2!important}
+.activity-panel .activity-item p{font-size:12px!important;line-height:1.35!important}
+.activity-panel .activity-item time{font-size:11px!important}
+.shortcut{
+  font-family:Georgia,'Times New Roman',serif!important;
+  font-size:12px!important;
+  font-weight:600!important;
+  letter-spacing:0!important;
+}
+.admin-shortcuts .shortcut-row{grid-template-columns:repeat(3,minmax(0,1fr));}
+
+@media(max-width:900px){
+  .admin-overview-grid,
+  .admin-lower-grid{grid-template-columns:1fr!important;}
+  .admin-overview-grid>.panel,
+  .admin-lower-grid>.panel{height:auto!important;}
+}
