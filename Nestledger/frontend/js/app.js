@@ -230,7 +230,7 @@ function quoteModal(wid){document.body.insertAdjacentHTML('beforeend',`<div clas
 async function quotesModal(wid){
   state.quoteCache=state.quoteCache||{};
   const cached=Array.isArray(state.quoteCache[wid])?state.quoteCache[wid]:null;
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal-backdrop" id="modal"><div class="modal"><button class="close" onclick="$('#modal').remove()">×</button><h3>${i18n.t('quotesReceivedTitle')}</h3><div id="quotesContent">${cached&&cached.length?cached.map(q=>quoteCardHtml(wid,q)).join(''):`<div class="empty">${i18n.t('loading')}</div>`}</div></div></div>`);
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-backdrop" id="modal"><div class="modal modal-quotes"><button class="close" onclick="$('#modal').remove()">×</button><div class="quotes-header"><span class="eyebrow">${i18n.t('quotesReceivedTitle')}</span><h3>Compare vendor quotations</h3><p>Review the price and vendor details side by side.</p></div><div id="quotesContent">${cached&&cached.length?quoteListHtml(cached):`<div class="empty">${i18n.t('loading')}</div>`}</div></div></div>`);
   try{
     // Always refresh this endpoint when the resident opens quotations. The work-order
     // list is intentionally cached for speed, but quotations are time-sensitive and
@@ -239,7 +239,7 @@ async function quotesModal(wid){
     const quotes=Array.isArray(d.quotes)?d.quotes:[];
     state.quoteCache[wid]=quotes;
     const content=$('#quotesContent');
-    if(content) content.innerHTML=quotes.length?quotes.map(q=>quoteCardHtml(wid,q)).join(''):`<div class="empty">${i18n.t('noQuotesYet')}</div>`;
+    if(content) content.innerHTML=quotes.length?quoteListHtml(quotes):`<div class="empty">${i18n.t('noQuotesYet')}</div>`;
     renderIcons();
   }catch(e){
     const content=$('#quotesContent');
@@ -247,7 +247,8 @@ async function quotesModal(wid){
   }
 }
 
-function quoteCardHtml(wid,q){const amount=Number(q.amount||0);return `<article class="quote-card"><div class="quote-vendor"><div class="quote-vendor-icon"><i data-lucide="briefcase-business"></i></div><div><span class="quote-kicker">${i18n.t('vendor')}</span><h4>${esc(q.vendor_name||i18n.t('vendor'))}</h4><p>${esc(q.vendor_service||'')}${q.vendor_contact?' · <i data-lucide="phone"></i> '+esc(q.vendor_contact):''}</p></div><span class="badge ${esc(q.status)}">${statusLabel(q.status)}</span></div><div class="quote-main"><span>${i18n.t('quoteAmountLabel')}</span><strong>₹${amount.toLocaleString('en-IN')}</strong></div>${q.note?`<div class="quote-note"><span>${i18n.t('quoteNoteLabel')}</span><p>${esc(q.note)}</p></div>`:''}</article>`}
+function quoteListHtml(quotes){const valid=quotes.filter(q=>Number(q.amount||0)>0);const lowest=valid.length?Math.min(...valid.map(q=>Number(q.amount))):null;return `<div class="quotes-summary"><div><span>QUOTATIONS</span><b>${quotes.length}</b></div>${lowest!==null?`<div><span>LOWEST QUOTE</span><b>₹${lowest.toLocaleString('en-IN')}</b></div>`:''}</div><div class="quotes-grid">${quotes.map(q=>quoteCardHtml(0,q,lowest)).join('')}</div>`}
+function quoteCardHtml(wid,q,lowest){const amount=Number(q.amount||0);const isLowest=lowest!==null&&amount===lowest;return `<article class="quote-card${isLowest?' quote-card-best':''}">${isLowest?`<div class="quote-best"><i data-lucide="badge-check"></i> Lowest quote</div>`:''}<div class="quote-vendor"><div class="quote-vendor-icon"><i data-lucide="briefcase-business"></i></div><div><span class="quote-kicker">${i18n.t('vendor')}</span><h4>${esc(q.vendor_name||i18n.t('vendor'))}</h4><p>${esc(q.vendor_service||'')}${q.vendor_contact?' · <i data-lucide="phone"></i> '+esc(q.vendor_contact):''}</p></div><span class="badge ${esc(q.status)}">${statusLabel(q.status)}</span></div><div class="quote-main"><span>${i18n.t('quoteAmountLabel')}</span><strong>₹${amount.toLocaleString('en-IN')}</strong></div>${q.note?`<div class="quote-note"><span>${i18n.t('quoteNoteLabel')}</span><p>${esc(q.note)}</p></div>`:''}</article>`}
 
 async function acceptQuote(wid,qid){if(!confirm(i18n.t('confirmAcceptQuote')))return;try{await api(`/work-orders/${wid}/quotes/${qid}/accept`,{method:'PATCH'});const m=$('#modal');if(m)m.remove();toast(i18n.t('quoteAccepted'));loadPage()}catch(e){toast(e.message)}}
 

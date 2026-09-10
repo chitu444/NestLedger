@@ -1290,3 +1290,24 @@ html[data-theme="dark"] .quote-vendor-icon{background:#40364b;color:#d8ccef}
 html[data-theme="dark"] .quote-main strong{color:#f0eae1}
 html[data-theme="dark"] .quote-note{border-color:#4a424d}
 @media(max-width:600px){.quote-card{padding:16px}.quote-vendor{grid-template-columns:auto 1fr}.quote-vendor .badge{grid-column:2;justify-self:start}.quote-main{padding-top:20px}.quote-main strong{font-size:38px}}
+
+/* Phase 4: resident quotation comparison experience. */
+.modal-quotes{width:min(900px,100%);max-height:88vh;overflow:auto;padding:28px}
+.quotes-header{padding-right:42px;margin-bottom:20px}
+.quotes-header .eyebrow{display:block;font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:5px}
+.quotes-header h3{font-size:28px!important;margin:0 0 5px!important}
+.quotes-header p{margin:0;color:var(--muted);font-size:13px}
+.quotes-summary{display:flex;gap:10px;margin-bottom:14px}
+.quotes-summary>div{flex:1;border:1px solid var(--line);border-radius:14px;padding:12px 15px;background:rgba(255,255,255,.45)}
+.quotes-summary span{display:block;font-size:9px;letter-spacing:1.1px;color:var(--muted);font-weight:700}
+.quotes-summary b{display:block;margin-top:4px;font:700 18px Space Grotesk;color:var(--ink)}
+.quotes-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.quote-card{position:relative;margin:0;min-width:0}
+.quote-card-best{border-color:rgba(83,107,85,.38);box-shadow:0 8px 25px rgba(52,71,58,.09)}
+.quote-best{display:flex;align-items:center;gap:6px;margin:-1px -1px 14px;padding:8px 12px;border-radius:15px 15px 0 0;background:var(--accent2);color:var(--accent);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}
+.quote-best svg{width:14px;height:14px}
+html[data-theme="dark"] .quotes-summary>div{background:#2a252c;border-color:#4a424d}
+html[data-theme="dark"] .quotes-summary b{color:#f0eae1}
+html[data-theme="dark"] .quote-card-best{border-color:#6a5b73}
+html[data-theme="dark"] .quote-best{background:#40364b;color:#d8ccef}
+@media(max-width:680px){.modal-quotes{padding:22px 16px}.quotes-grid{grid-template-columns:1fr}.quotes-header h3{font-size:24px!important}.quotes-summary b{font-size:16px}}
