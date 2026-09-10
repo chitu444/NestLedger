@@ -29,11 +29,12 @@ LANGUAGES = {
 }
 ALLOWED_ACTIONS = {
     "dashboard", "payments", "complaints", "notices", "workorders", "receipts",
-    "profile", "residents", "vendors", "expenses", "vendorperformance", "logout"
+    "profile", "residents", "vendors", "expenses", "vendorperformance", "reports"
 }
 MAX_MESSAGE_LENGTH = 1000
 MAX_HISTORY_ITEMS = 8
 DEFAULT_MODEL = "gemini-2.5-flash"
+ASSISTANT_NAME = "AK"
 
 
 def _current_user():
@@ -101,10 +102,12 @@ def _authorized_context(user):
         for item in assigned:
             lines.append(f"Assigned work order #{item.id}: {item.title}; status {item.status}; amount {_money(item.amount)}")
         lines.append(f"Open jobs visible on board: {len(open_jobs)}")
+        for item in open_jobs:
+            lines.append(f"Open work order #{item.id}: {item.title}; category {item.category}; amount {_money(item.amount)}")
 
     else:
         total_billed = float(db.session.query(func.coalesce(func.sum(MaintenanceBill.amount), 0)).scalar() or 0)
-        total_collected = float(db.session.query(func.coalesce(func.sum(Payment.amount), 0)).filter(Payment.status == "paid").scalar() or 0)
+        total_collected = float(db.session.query(func.coalesce(func.sum(Payment.amount), 0)).filter(Payment.status == "paid", Payment.bill_id.isnot(None)).scalar() or 0)
         total_expenses = float(db.session.query(func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0)
         lines += [
             "Admin society overview:",
@@ -159,7 +162,7 @@ def _local_fallback(user, message, lang):
         action = {"type": "navigate", "target": "workorders", "label": "Open Work Orders"}
         return {"reply": "You can view maintenance requests and work orders on the Work Orders page.", "action": action, "fallback": True}
 
-    return {"reply": f"Hello {user.name}! I can help with dues, payments, complaints, notices, and maintenance requests.", "action": None, "fallback": True}
+    return {"reply": f"Hi {user.name}! I'm AK, NestLedger's community assistant. I can help with dues, payments, complaints, notices, work orders, and supported actions.", "action": None, "fallback": True}
 
 
 def _gemini(message, lang, history, context):
@@ -177,17 +180,21 @@ def _gemini(message, lang, history, context):
         if text:
             history_text += f"{role}: {text}\n"
 
-    system = f"""You are the NestLedger Community AI Assistant for an apartment community.
-Answer in {lang_name}. Be concise, friendly, and factual.
+    system = f"""You are AK, the NestLedger Community Assistant for an apartment community.
+You are a reliable operational assistant, not a generic chatbot.
+Answer in {lang_name}. Be concise, friendly, factual, and action-oriented.
+When a user asks how to do something, give the exact NestLedger page/action and explain any confirmation requirement.
 
 SECURITY RULES:
 - Use only the authorized context supplied below.
 - Never reveal passwords, API keys, secrets, hashes, database internals, or private information about another resident.
 - Never invent amounts, statuses, names, apartments, dates, or records.
 - Do not expose raw database details.
-- Navigation targets are limited to: dashboard, payments, complaints, notices, workorders, receipts, profile, residents, vendors, expenses, vendorperformance, logout.
+- Navigation targets are limited to: dashboard, payments, complaints, notices, workorders, receipts, profile, residents, vendors, expenses, vendorperformance, reports.
 - Use an action only when it genuinely helps the user navigate. Otherwise action must be null.
-- If the user asks to perform a data-changing action, explain the appropriate page rather than pretending it was completed.
+- Never claim that a payment, mutation, complaint update, quote decision, or work-order change happened unless the application actually executed it.
+- For sensitive actions, direct the user to the supported UI/action flow and mention that confirmation is required.
+- Prefer concrete next steps over generic advice.
 
 Return ONLY JSON with this shape:
 {{"reply":"...","action":{{"type":"navigate","target":"payments","label":"Open Payments"}}}}
@@ -238,7 +245,13 @@ AUTHORIZED USER CONTEXT:
         with urllib.request.urlopen(req, timeout=12) as response:
             payload = json.loads(response.read().decode("utf-8"))
         text = payload["candidates"][0]["content"]["parts"][0]["text"]
-        result = json.loads(text)
+        # Gemini may occasionally wrap JSON in markdown fences despite JSON mode.
+        cleaned = str(text).strip()
+        if cleaned.startswith("```json") and cleaned.endswith("```"):
+            cleaned = cleaned[7:-3].strip()
+        elif cleaned.startswith("```") and cleaned.endswith("```"):
+            cleaned = cleaned[3:-3].strip()
+        result = json.loads(cleaned)
         reply = str(result.get("reply", "")).strip()
         action = result.get("action")
         if not reply:

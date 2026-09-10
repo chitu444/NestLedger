@@ -1313,3 +1313,18 @@ html[data-theme="dark"] .quotes-summary b{color:#f0eae1}
 html[data-theme="dark"] .quote-card-best{border-color:#6a5b73}
 html[data-theme="dark"] .quote-best{background:#40364b;color:#d8ccef}
 @media(max-width:680px){.modal-quotes{padding:22px 16px}.quotes-grid{grid-template-columns:1fr}.quotes-header h3{font-size:24px!important}.quotes-summary b{font-size:16px}}
+
+
+/* AK assistant launcher: compact Heroicons-based circular control. */
+.chatbot-fab{width:58px!important;height:58px!important;padding:0!important;border-radius:50%!important;right:20px!important;bottom:22px!important;display:grid!important;place-items:center!important;gap:0!important;background:var(--ink)!important;color:#fff!important;border:1px solid rgba(255,255,255,.14)!important;box-shadow:0 14px 34px rgba(30,42,35,.24)!important;transform:none!important}
+.chatbot-fab:hover{transform:translateY(-3px)!important;background:#253a30!important;box-shadow:0 18px 40px rgba(30,42,35,.30)!important}
+.chatbot-fab-label{display:none!important}
+.chatbot-fab-icon{width:100%!important;height:100%!important;display:grid!important;place-items:center!important;font-size:0!important}
+.chatbot-fab-icon .ak-heroicon{width:28px;height:28px;display:block;color:currentColor}
+.chatbot-avatar{width:38px!important;height:38px!important;border-radius:50%!important}
+.chatbot-avatar .ak-heroicon{width:23px;height:23px;display:block;color:currentColor}
+.chatbot-title{letter-spacing:.01em}
+.chatbot-panel{bottom:92px!important}
+html[data-theme="dark"] .chatbot-fab{background:#d9e1d6!important;color:#24372d!important;border-color:#526052!important}
+html[data-theme="dark"] .chatbot-fab:hover{background:#edf1ea!important}
+@media(max-width:520px){.chatbot-fab{right:14px!important;bottom:18px!important;width:54px!important;height:54px!important}.chatbot-panel{bottom:82px!important}}
