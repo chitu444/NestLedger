@@ -143,7 +143,7 @@ button,input,select,textarea{font-family:'DM Sans',Arial,sans-serif}
 .auth-art:before{content:"";position:absolute;width:330px;height:520px;border:1px solid rgba(239,235,215,.15);border-radius:52% 48% 45% 55%;left:-150px;bottom:-170px;transform:rotate(28deg)}
 .auth-art:after{width:500px;height:500px;right:-230px;bottom:-230px;border-color:rgba(239,235,215,.14)}
 .brand{font-family:Georgia,'Times New Roman',serif;font-size:28px;letter-spacing:.2px}
-.art-copy{text-align:left;margin:auto 0;max-width:620px}
+.art-copy{text-align:center;margin:auto;max-width:620px;width:100%}
 .art-copy .eyebrow{font-family:'DM Sans',sans-serif;letter-spacing:3px}
 .art-copy h1{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400;font-size:64px;line-height:.98;letter-spacing:-2px}
 .art-copy p{font-family:Georgia,'Times New Roman',serif;color:#e0e5dc;line-height:1.85}
@@ -608,6 +608,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .bell-dot{display:grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:var(--danger);color:#fff;font:700 9px 'DM Sans',sans-serif;position:absolute;top:-2px;right:-2px}
 .bell-wrap{position:relative}
 .bell-btn{position:relative}
+.bell-btn{position:relative;display:grid!important;place-items:center!important;line-height:0!important}
+.bell-btn svg,.bell-btn [data-lucide]{display:block;width:19px!important;height:19px!important;margin:0!important;transform:none!important}
 .compact-panel::after{display:none!important}
 
 /* === Navigation + account placement refinement ===
