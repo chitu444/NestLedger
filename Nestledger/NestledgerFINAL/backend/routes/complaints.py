@@ -1,0 +1,136 @@
+from datetime import datetime, timedelta
+
+from flask import Blueprint, request
+from flask_jwt_extended import get_jwt_identity, jwt_required
+from sqlalchemy import or_
+from utils.auth import current_user
+
+from models.complaint import Complaint
+from models.db import db
+from models.notification import notify
+from models.user import User
+from utils.validators import required_text, valid_status
+from utils.audit import record
+from utils.pagination import paginate_query
+
+
+complaints_bp = Blueprint("complaints", __name__)
+
+VALID_STATUSES = {"open", "in_progress", "resolved", "closed"}
+STATUS_LABELS = {
+    "open": "Open",
+    "in_progress": "In Progress",
+    "resolved": "Resolved",
+    "closed": "Closed",
+}
+
+
+
+@complaints_bp.get("/complaints")
+@jwt_required()
+def list_complaints():
+    user = current_user()
+    if user is None:
+        return {"error": "User not found"}, 404
+
+    query = (
+        Complaint.query
+        if user.role == "admin"
+        else Complaint.query.filter_by(user_id=user.id)
+    )
+
+    status = (request.args.get("status") or "").strip().lower()
+    search = (request.args.get("q") or "").strip()
+    if status in VALID_STATUSES:
+        query = query.filter(Complaint.status == status)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(or_(Complaint.subject.ilike(like), Complaint.category.ilike(like)))
+    rows, meta = paginate_query(query.order_by(Complaint.id.desc()), default=20)
+    return {"complaints": [c.to_dict() for c in rows], "meta": meta}
+
+
+@complaints_bp.post("/complaints")
+@jwt_required()
+def create_complaint():
+    user = current_user()
+    if user is None:
+        return {"error": "User not found"}, 404
+    if user.role != "resident":
+        return {"error": "Only residents can create complaints"}, 403
+    data = request.get_json(silent=True) or {}
+
+    category = str(data.get("category", "")).strip()
+    subject = str(data.get("subject", "")).strip()
+    description = str(data.get("description", "")).strip()
+
+    for value, label in ((category, "Category"), (subject, "Subject")):
+        ok, err = required_text(value, label, max_len=200)
+        if not ok:
+            return {"error": err}, 400
+
+    ok, err = required_text(description, "Description", max_len=3000)
+    if not ok:
+        return {"error": err}, 400
+
+    # Prevent accidental double-submission of the same complaint. This is a
+    # server-side safeguard in addition to the frontend submit lock.
+    recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+    duplicate = (
+        Complaint.query
+        .filter(
+            Complaint.user_id == user.id,
+            Complaint.category == category,
+            Complaint.subject == subject,
+            Complaint.description == description,
+            Complaint.created_at >= recent_cutoff,
+        )
+        .order_by(Complaint.id.desc())
+        .first()
+    )
+    if duplicate is not None:
+        return {"complaint": duplicate.to_dict(), "duplicate": True}, 200
+
+    complaint = Complaint(
+        user_id=user.id,
+        category=category,
+        subject=subject,
+        description=description,
+    )
+    db.session.add(complaint)
+    db.session.commit()
+
+    return {"complaint": complaint.to_dict()}, 201
+
+
+@complaints_bp.patch("/complaints/<int:cid>")
+@jwt_required()
+def update_complaint(cid):
+    user = current_user()
+    complaint = db.session.get(Complaint, cid)
+
+    if complaint is None:
+        return {"error": "Complaint not found"}, 404
+    if user is None or user.role != "admin":
+        return {"error": "Only admins can update complaint status"}, 403
+
+    status = (request.get_json(silent=True) or {}).get("status", complaint.status)
+    ok, err = valid_status(status, VALID_STATUSES)
+    if not ok:
+        return {"error": err}, 400
+
+    old_status = complaint.status
+    complaint.status = status
+    complaint.updated_at = datetime.utcnow()
+    record(user.id, "complaint.status_changed", "complaint", complaint.id,
+           f"{old_status} → {status}", commit=False)
+    db.session.commit()
+
+    notify(
+        complaint.user_id,
+        "Complaint Updated",
+        f"Your {complaint.category.lower()} complaint \"{complaint.subject}\" is now {STATUS_LABELS.get(status, status)}.",
+        notif_type="complaint",
+    )
+
+    return {"complaint": complaint.to_dict()}
