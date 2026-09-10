@@ -1,4 +1,5 @@
 from models.db import db
+from utils.validators import normalize_vendor_services
 
 
 class Vendor(db.Model):
@@ -48,6 +49,8 @@ class Vendor(db.Model):
             "user_id": self.user_id,
             "name": self.name,
             "service": self.service,
+            "services": normalize_vendor_services(self.service),
+            "roles": [job.title() for job in normalize_vendor_services(self.service)],
             "contact": self.contact,
             "contract": self.contract,
             "status": self.status,

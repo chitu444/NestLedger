@@ -11,7 +11,7 @@ from models.payment import MaintenanceBill, Payment
 from models.user import User
 from models.vendor import Vendor
 from models.work_order import WorkOrder
-from utils.validators import REQUEST_CATEGORY_TO_JOB
+from utils.validators import REQUEST_CATEGORY_TO_JOB, normalize_vendor_services
 from services.finance import admin_summary, resident_summary
 from services.operations import complaint_counts, open_work_orders_count
 
@@ -78,11 +78,11 @@ def dashboard():
             if profile
             else []
         )
-        vendor_job = (profile.service or "").strip().lower() if profile else None
+        vendor_jobs = normalize_vendor_services(profile.service) if profile else []
         allowed_categories = [
             category.title()
             for category, job in REQUEST_CATEGORY_TO_JOB.items()
-            if job == vendor_job
+            if job in vendor_jobs
         ]
         open_jobs = (
             WorkOrder.query.filter(

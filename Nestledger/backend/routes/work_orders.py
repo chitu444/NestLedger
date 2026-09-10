@@ -12,7 +12,7 @@ from models.rating import Rating
 from models.user import User
 from models.vendor import Vendor
 from models.work_order import WorkOrder
-from utils.validators import required_text, valid_amount, REQUEST_CATEGORY_TO_JOB
+from utils.validators import required_text, valid_amount, REQUEST_CATEGORY_TO_JOB, normalize_vendor_services
 from utils.audit import record
 from utils.pagination import paginate_query
 from utils.concurrency import lock_fingerprint
@@ -39,7 +39,7 @@ def category_job(category: str):
 
 def vendor_matches_order(vendor: Vendor, order: WorkOrder) -> bool:
     required_job = category_job(order.category)
-    return required_job is not None and (vendor.service or "").strip().lower() == required_job
+    return required_job is not None and required_job in normalize_vendor_services(vendor.service)
 
 
 
@@ -56,12 +56,13 @@ def list_orders():
         profile = Vendor.query.filter_by(user_id=user.id, status="active").first()
         if profile is None:
             return {"work_orders": []}
-        required_job = (profile.service or "").strip().lower()
-        # Vendors see only open requests for their own job title, plus jobs
+        vendor_jobs = normalize_vendor_services(profile.service)
+        # Vendors see every open request matching any of their selected trades,
+        # plus jobs already assigned to them regardless of current status.
         # already assigned to them regardless of their current status.
         matching_categories = [
             category for category, job in REQUEST_CATEGORY_TO_JOB.items()
-            if job == required_job
+            if job in vendor_jobs
         ]
         matching_labels = [c.title() for c in matching_categories]
         query = WorkOrder.query.filter(
@@ -245,7 +246,7 @@ def create_order():
         required_job = category_job(order.category)
         vendor_user_ids = [
             v.user_id for v in Vendor.query.filter_by(status="active").all()
-            if v.user_id and (v.service or "").strip().lower() == required_job
+            if v.user_id and required_job in normalize_vendor_services(v.service)
         ]
         from models.notification import notify_many
 
@@ -332,7 +333,7 @@ def withdraw_order(wid):
     required_job = category_job(order.category)
     notify_many(
         [v.user_id for v in Vendor.query.filter_by(status="active").all()
-         if v.user_id and (v.service or "").strip().lower() == required_job],
+         if v.user_id and required_job in normalize_vendor_services(v.service)],
         "Job Available Again",
         f"A {required_job.title()} job \"{order.title}\" is available again.",
         notif_type="work_order",

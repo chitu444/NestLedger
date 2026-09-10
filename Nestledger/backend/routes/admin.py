@@ -16,7 +16,7 @@ from models.payment import Payment, MaintenanceBill
 from models.user import User
 from models.vendor import Vendor
 from models.work_order import WorkOrder
-from utils.validators import required_text, valid_amount, valid_email, valid_password, valid_phone, VENDOR_JOB_TITLES, REQUEST_CATEGORY_TO_JOB
+from utils.validators import required_text, valid_amount, valid_email, valid_password, valid_phone, VENDOR_JOB_TITLES, REQUEST_CATEGORY_TO_JOB, normalize_vendor_services, valid_vendor_services
 from utils.pagination import paginate_query
 from utils.concurrency import lock_fingerprint
 from sqlalchemy import or_
@@ -321,7 +321,12 @@ def add_vendor():
     name = str(data.get("name", "")).strip()
     email = str(data.get("email", "")).strip().lower()
     password = str(data.get("password", ""))
-    job_title = str(data.get("job_title", data.get("service", ""))).strip().lower()
+    raw_roles = data.get("job_titles", data.get("roles", data.get("job_title", data.get("service", ""))))
+    ok, err = valid_vendor_services(raw_roles, required=True)
+    if not ok:
+        return {"error": err}, 400
+    job_titles = normalize_vendor_services(raw_roles)
+    service = ", ".join(job.title() for job in job_titles)
     contact = str(data.get("contact", "")).strip()
     contract = str(data.get("contract", "")).strip() or None
 
@@ -337,8 +342,6 @@ def add_vendor():
     ok, err = valid_phone(contact, required=True)
     if not ok:
         return {"error": err}, 400
-    if job_title not in VENDOR_JOB_TITLES:
-        return {"error": "Job title must be one of: Plumber, Electrician, Carpenter, Painter, Cleaner"}, 400
     if User.query.filter_by(email=email).first():
         return {"error": "Email already registered"}, 409
 
@@ -350,7 +353,7 @@ def add_vendor():
     vendor = Vendor(
         user_id=user.id,
         name=name,
-        service=job_title.title(),
+        service=service,
         contact=contact,
         contract=contract,
         status="active",

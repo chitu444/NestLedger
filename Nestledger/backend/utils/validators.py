@@ -19,6 +19,7 @@ VALID_ROLES = {"resident", "vendor", "admin"}
 PUBLIC_ROLES = {"resident"}
 
 VENDOR_JOB_TITLES = {"plumber", "electrician", "carpenter", "painter", "cleaner"}
+VENDOR_JOB_ORDER = ("plumber", "electrician", "carpenter", "painter", "cleaner")
 APARTMENT_CODES = tuple(f"{chr(65 + block)}-{unit}" for block in range(13) for unit in range(1, 8))
 APARTMENT_CODE_SET = set(APARTMENT_CODES)
 
@@ -28,6 +29,29 @@ def valid_apartment(value: str, *, required: bool = True):
         return (False, "Apartment / Flat is required") if required else (True, None)
     if value not in APARTMENT_CODE_SET:
         return False, "Select a valid apartment from A-1 through M-7"
+    return True, None
+
+
+
+def normalize_vendor_services(value):
+    """Return a canonical list of vendor trades from legacy or multi-trade input."""
+    if isinstance(value, (list, tuple, set)):
+        raw = value
+    else:
+        raw = str(value or "").replace("/", ",").replace(";", ",").split(",")
+    cleaned = {str(item).strip().lower() for item in raw if str(item).strip()}
+    return [job for job in VENDOR_JOB_ORDER if job in cleaned]
+
+
+def valid_vendor_services(value, *, required=True):
+    services = normalize_vendor_services(value)
+    if not services:
+        return ((False, "Select at least one vendor role") if required else (True, None))
+    # Detect unknown values separately because normalize_vendor_services intentionally drops them.
+    raw = value if isinstance(value, (list, tuple, set)) else str(value or "").replace("/", ",").replace(";", ",").split(",")
+    unknown = {str(item).strip().lower() for item in raw if str(item).strip()} - VENDOR_JOB_TITLES
+    if unknown:
+        return False, "Vendor roles must be Plumber, Electrician, Carpenter, Painter or Cleaner"
     return True, None
 
 REQUEST_CATEGORY_TO_JOB = {

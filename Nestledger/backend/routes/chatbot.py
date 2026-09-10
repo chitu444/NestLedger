@@ -89,9 +89,10 @@ def _authorized_context(user):
         active_count = WorkOrder.query.filter(WorkOrder.vendor_id == profile.id, WorkOrder.status.in_(("accepted", "in_progress"))).count() if profile else 0
         allowed_categories = []
         if profile:
-            from utils.validators import REQUEST_CATEGORY_TO_JOB
+            from utils.validators import REQUEST_CATEGORY_TO_JOB, normalize_vendor_services
             service=(profile.service or '').strip().lower()
-            allowed_categories=[c.title() for c,j in REQUEST_CATEGORY_TO_JOB.items() if j==service]
+            vendor_jobs=normalize_vendor_services(profile.service)
+            allowed_categories=[c.title() for c,j in REQUEST_CATEGORY_TO_JOB.items() if j in vendor_jobs]
         open_jobs = WorkOrder.query.filter(WorkOrder.status == "open", WorkOrder.category.in_(allowed_categories)).order_by(WorkOrder.id.desc()).limit(5).all() if allowed_categories else []
         lines += [
             "Vendor profile:",
