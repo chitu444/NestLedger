@@ -47,6 +47,9 @@ def create_notice():
 
     # Guard against accidental duplicate submits/retries of the same notice.
     # The frontend also disables the submit button while the request is pending.
+    # Serialize duplicate detection for the same admin so two simultaneous
+    # submissions cannot both pass the short-window check.
+    db.session.get(User, user.id, with_for_update=True)
     recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
     duplicate = (
         Notice.query

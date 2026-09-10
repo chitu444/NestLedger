@@ -677,12 +677,12 @@
   const SPEECH_LOCALE = { en: 'en-IN', ta: 'ta-IN', ml: 'ml-IN', kn: 'kn-IN', te: 'te-IN', hi: 'hi-IN' };
 
   function getLanguage() {
-    return localStorage.getItem(STORAGE_KEY) || 'en';
+    try { return localStorage.getItem(STORAGE_KEY) || 'en'; } catch { return 'en'; }
   }
 
   function setLanguage(lang) {
     if (!translations[lang]) lang = 'en';
-    localStorage.setItem(STORAGE_KEY, lang);
+    try { localStorage.setItem(STORAGE_KEY, lang); } catch {}
   }
 
   function t(key) {

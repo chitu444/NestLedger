@@ -3,7 +3,7 @@ import secrets
 
 from flask import Blueprint, request, Response, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
-from utils.auth import current_user
+from utils.auth import current_user, current_user_id
 
 from models.db import db
 from models.audit_log import AuditLog
@@ -217,9 +217,9 @@ def add_expense():
         return {"error": err}, 400
     amount = float(data.get("amount"))
 
-    # Server-side duplicate guard for double clicks, browser retries, or duplicate
-    # frontend handlers. Exact matching within a short window is treated as one
-    # submission; legitimate later expenses remain unaffected.
+    # Serialize duplicate detection for the same admin so simultaneous requests
+    # cannot both pass the short-window check.
+    db.session.get(User, current_user_id(), with_for_update=True)
     recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
     duplicate = (
         Expense.query
@@ -384,7 +384,7 @@ def resident_detail(resident_id):
     if require_admin() is None:
         return {"error": "Admin access required"}, 403
 
-    resident = db.session.get(User, resident_id)
+    resident = db.session.get(User, resident_id, with_for_update=True)
     if resident is None or resident.role != "resident":
         return {"error": "Resident not found"}, 404
 

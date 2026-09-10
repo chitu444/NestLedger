@@ -191,9 +191,16 @@ def _migration_4_apartment_integrity():
     inspector = inspect(db.engine)
     if "user" not in inspector.get_table_names():
         return
-    # Existing records outside the new A-1..Z-7 inventory are preserved.
-    # If duplicate valid assignments already exist, do not destructively rewrite them;
-    # deployment verification should surface the conflict for an administrator.
+    # Normalize apartment codes before enforcing uniqueness so harmless legacy
+    # casing/whitespace (for example 'a-1' or ' A-1 ') cannot bypass the index.
+    db.session.execute(text("""
+        UPDATE "user"
+        SET apartment = UPPER(TRIM(apartment))
+        WHERE role = 'resident' AND apartment IS NOT NULL
+    """))
+    # Existing records outside the new A-1..M-7 inventory are preserved.
+    # If duplicate assignments already exist, keep the lowest-id resident and
+    # clear the later duplicate assignments rather than deleting residents.
     rows = db.session.execute(text("""
         SELECT apartment, COUNT(*) AS c FROM "user"
         WHERE role = 'resident' AND apartment IS NOT NULL

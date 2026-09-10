@@ -162,6 +162,8 @@ def create_order():
     )
 
     if user.role == "resident":
+        # Serialize duplicate detection for repeated resident submissions.
+        db.session.get(User, user.id, with_for_update=True)
         order.resident_id = user.id
         order.apartment = user.apartment
         order.status = "open"
@@ -213,9 +215,14 @@ def create_order():
         else:
             order.status = "open"
 
-    # Admin-posted orders can also be double-submitted. Include the selected
-    # resident/vendor in the fingerprint so intentionally identical orders for
-    # different residents are still allowed.
+    # Admin-posted orders can also be double-submitted. Lock the selected
+    # resident (or the admin when no resident is selected) before duplicate
+    # detection so concurrent identical requests are serialized.
+    lock_user_id = order.resident_id or user.id
+    db.session.get(User, lock_user_id, with_for_update=True)
+
+    # Include the selected resident/vendor in the fingerprint so intentionally
+    # identical orders for different residents are still allowed.
     duplicate_query = (
         WorkOrder.query
         .filter(
