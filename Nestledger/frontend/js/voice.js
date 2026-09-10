@@ -364,11 +364,16 @@
   }
 
   function updateUI(){
+    const listeningText=global.i18n?global.i18n.t('voiceListening'):'Listening…';
     document.querySelectorAll('.voice-mic').forEach(btn=>{
       btn.classList.toggle('listening',listening);btn.setAttribute('aria-pressed',String(listening));
       const label=btn.querySelector('.voice-mic-label');
-      if(label)label.textContent=listening?(global.i18n?global.i18n.t('voiceListening'):'Listening…'):(global.i18n?global.i18n.t('voiceTapToSpeak'):'Speak');
+      if(label)label.textContent=listening?listeningText:(global.i18n?global.i18n.t('voiceTapToSpeak'):'Speak');
+      btn.setAttribute('title',listening?'Stop listening':((global.i18n&&global.i18n.t('voiceTapToSpeak'))||'Speak'));
+      btn.setAttribute('aria-label',listening?'Stop listening':((global.i18n&&global.i18n.t('voiceTapToSpeak'))||'Speak'));
     });
+    const status=document.getElementById('chatbotVoiceStatus');
+    if(status){status.hidden=!listening;status.textContent=listeningText;status.setAttribute('aria-live','polite');}
   }
 
   function scheduleRestart(){

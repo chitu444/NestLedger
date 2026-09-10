@@ -15,6 +15,7 @@ from models.work_order import WorkOrder
 from utils.validators import required_text, valid_amount, REQUEST_CATEGORY_TO_JOB
 from utils.audit import record
 from utils.pagination import paginate_query
+from utils.concurrency import lock_fingerprint
 
 
 workorders_bp = Blueprint("workorders", __name__)
@@ -152,6 +153,9 @@ def create_order():
     # the same POST twice. A matching request created in the last 30 seconds is
     # treated as the same submission.
     recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+    # Serialize identical create requests on PostgreSQL so two simultaneous
+    # requests cannot both pass the short-window duplicate check.
+    lock_fingerprint(f"work-order:{user.id}:{title}:{category}:{description or ""}:{amount}:{due_date or ""}:{data.get('resident_id') or ""}:{data.get('vendor_id') or ""}")
 
     order = WorkOrder(
         title=title,
@@ -162,8 +166,6 @@ def create_order():
     )
 
     if user.role == "resident":
-        # Serialize duplicate detection for repeated resident submissions.
-        db.session.get(User, user.id, with_for_update=True)
         order.resident_id = user.id
         order.apartment = user.apartment
         order.status = "open"
@@ -215,14 +217,9 @@ def create_order():
         else:
             order.status = "open"
 
-    # Admin-posted orders can also be double-submitted. Lock the selected
-    # resident (or the admin when no resident is selected) before duplicate
-    # detection so concurrent identical requests are serialized.
-    lock_user_id = order.resident_id or user.id
-    db.session.get(User, lock_user_id, with_for_update=True)
-
-    # Include the selected resident/vendor in the fingerprint so intentionally
-    # identical orders for different residents are still allowed.
+    # Admin-posted orders can also be double-submitted. Include the selected
+    # resident/vendor in the fingerprint so intentionally identical orders for
+    # different residents are still allowed.
     duplicate_query = (
         WorkOrder.query
         .filter(

@@ -28,6 +28,7 @@ def get_current_user():
 
 
 @auth_bp.get("/auth/apartments")
+@auth_bp.get("/apartments")
 def apartments():
     """Return the 13x7 apartment map for public registration."""
     from utils.validators import APARTMENT_CODES
@@ -75,7 +76,7 @@ def register():
     if User.query.filter_by(email=email).first():
         return {"error": "Email already registered"}, 409
 
-    # Public registration uses the fixed A-1 .. M-7 inventory.
+    # Public registration uses the fixed A-1 .. Z-7 inventory.
     apartment = str(data.get("apartment", "")).strip().upper() or None
     ok, err = valid_apartment(apartment, required=True)
     if not ok:
@@ -231,7 +232,6 @@ def profile():
     data = request.get_json(silent=True) or {}
     name = str(data.get("name", user.name)).strip()
     phone = str(data.get("phone", user.phone or "")).strip()
-    apartment = user.apartment or ""
 
     ok, err = required_text(name, "Name", max_len=120)
     if not ok:

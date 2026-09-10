@@ -191,16 +191,22 @@ def _migration_4_apartment_integrity():
     inspector = inspect(db.engine)
     if "user" not in inspector.get_table_names():
         return
-    # Normalize apartment codes before enforcing uniqueness so harmless legacy
-    # casing/whitespace (for example 'a-1' or ' A-1 ') cannot bypass the index.
-    db.session.execute(text("""
-        UPDATE "user"
-        SET apartment = UPPER(TRIM(apartment))
+    # Normalize stored resident apartment codes before enforcing uniqueness.
+    # This prevents values such as " a-1 " and "A-1" from bypassing the unique
+    # index and then failing the PostgreSQL inventory CHECK constraint.
+    resident_rows = db.session.execute(text("""
+        SELECT id, apartment FROM "user"
         WHERE role = 'resident' AND apartment IS NOT NULL
-    """))
+    """)).mappings().all()
+    for resident in resident_rows:
+        normalized = str(resident["apartment"] or "").strip().upper()
+        if normalized and normalized != resident["apartment"]:
+            db.session.execute(text('UPDATE "user" SET apartment = :apartment WHERE id = :user_id'),
+                               {"apartment": normalized, "user_id": resident["id"]})
+
     # Existing records outside the new A-1..M-7 inventory are preserved.
-    # If duplicate assignments already exist, keep the lowest-id resident and
-    # clear the later duplicate assignments rather than deleting residents.
+    # If duplicate assignments exist, preserve every resident but clear the later
+    # duplicate assignments deterministically so the unique index can be created.
     rows = db.session.execute(text("""
         SELECT apartment, COUNT(*) AS c FROM "user"
         WHERE role = 'resident' AND apartment IS NOT NULL

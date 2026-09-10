@@ -3,7 +3,7 @@ import secrets
 
 from flask import Blueprint, request, Response, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
-from utils.auth import current_user, current_user_id
+from utils.auth import current_user
 
 from models.db import db
 from models.audit_log import AuditLog
@@ -18,6 +18,7 @@ from models.vendor import Vendor
 from models.work_order import WorkOrder
 from utils.validators import required_text, valid_amount, valid_email, valid_password, valid_phone, VENDOR_JOB_TITLES, REQUEST_CATEGORY_TO_JOB
 from utils.pagination import paginate_query
+from utils.concurrency import lock_fingerprint
 from sqlalchemy import or_
 import csv
 import io
@@ -217,10 +218,11 @@ def add_expense():
         return {"error": err}, 400
     amount = float(data.get("amount"))
 
-    # Serialize duplicate detection for the same admin so simultaneous requests
-    # cannot both pass the short-window check.
-    db.session.get(User, current_user_id(), with_for_update=True)
+    # Server-side duplicate guard for double clicks, browser retries, or duplicate
+    # frontend handlers. Exact matching within a short window is treated as one
+    # submission; legitimate later expenses remain unaffected.
     recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+    lock_fingerprint(f"expense:{category}:{description}:{amount}")
     duplicate = (
         Expense.query
         .filter(
@@ -384,7 +386,7 @@ def resident_detail(resident_id):
     if require_admin() is None:
         return {"error": "Admin access required"}, 403
 
-    resident = db.session.get(User, resident_id, with_for_update=True)
+    resident = db.session.get(User, resident_id)
     if resident is None or resident.role != "resident":
         return {"error": "Resident not found"}, 404
 
@@ -482,6 +484,7 @@ def create_maintenance_bill():
         if not ok:
             return {"error": err}, 400
 
+    lock_fingerprint(f"maintenance-bill:{resident.id}:{month}")
     existing = MaintenanceBill.query.filter_by(user_id=resident.id, month=month).first()
     if existing:
         return {"error": f"A maintenance bill for {month} already exists for this resident"}, 409

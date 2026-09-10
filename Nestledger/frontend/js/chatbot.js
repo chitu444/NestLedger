@@ -96,7 +96,7 @@
       <div class="chatbot-header">
         <div class="chatbot-header-info">
           <div class="chatbot-avatar">${HEROICON_CPU}</div>
-          <div><h4 class="chatbot-title" id="chatbotHeaderTitle">AK · Community Assistant</h4><p class="chatbot-sub" id="chatbotHeaderSub">Your NestLedger command assistant</p></div>
+          <div><h4 class="chatbot-title" id="chatbotHeaderTitle">AK · Community Assistant</h4><p class="chatbot-sub" id="chatbotHeaderSub">Your NestLedger command assistant</p><span class="chatbot-voice-status" id="chatbotVoiceStatus" hidden>Listening…</span></div>
         </div>
         <div class="chatbot-header-actions">
           <button type="button" class="chatbot-icon-btn" id="chatbotClearBtn" title="Clear chat"><i data-lucide="trash-2"></i></button>

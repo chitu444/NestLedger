@@ -51,7 +51,7 @@
           const message = data?.error?.message || data?.error || data?.message || `Request failed (${response.status})`;
           const error = new Error(message); error.status = response.status; error.code = data?.error?.code; throw error;
         }
-        if (guardPageSeq != null && window.__NLPageLoadSeq != null && guardPageSeq !== window.__NLPageLoadSeq) {
+        if (isGet && guardPageSeq != null && window.__NLPageLoadSeq != null && guardPageSeq !== window.__NLPageLoadSeq) {
           // A stale navigation response is intentionally ignored by the page
           // loader. Do not turn it into a misleading timeout/network error.
           const staleError = new DOMException('Stale page request', 'AbortError');
@@ -63,7 +63,7 @@
         return data;
       } catch (error) {
         if (error?.name === 'AbortError') {
-          if (error?.code === 'STALE_PAGE_REQUEST' || guardPageSeq != null && guardPageSeq !== window.__NLPageLoadSeq) {
+          if (error?.code === 'STALE_PAGE_REQUEST' || (isGet && guardPageSeq != null && guardPageSeq !== window.__NLPageLoadSeq)) {
             throw error;
           }
           const timeoutError = new Error(timedOut

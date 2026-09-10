@@ -10,6 +10,7 @@ from models.notification import notify_many
 from models.user import User
 from utils.validators import required_text
 from utils.pagination import paginate_query
+from utils.concurrency import lock_fingerprint
 
 
 notices_bp = Blueprint("notices", __name__)
@@ -47,10 +48,8 @@ def create_notice():
 
     # Guard against accidental duplicate submits/retries of the same notice.
     # The frontend also disables the submit button while the request is pending.
-    # Serialize duplicate detection for the same admin so two simultaneous
-    # submissions cannot both pass the short-window check.
-    db.session.get(User, user.id, with_for_update=True)
     recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+    lock_fingerprint(f"notice:{user.id}:{tag}:{title}:{body}")
     duplicate = (
         Notice.query
         .filter(
