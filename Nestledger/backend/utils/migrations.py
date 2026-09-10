@@ -12,6 +12,7 @@ from models.db import db
 MIGRATIONS = (
     (1, "add_hardening_columns", "_migration_1_hardening_columns"),
     (2, "add_query_indexes", "_migration_2_query_indexes"),
+    (3, "enforce_pending_quote_uniqueness", "_migration_3_quote_integrity"),
 )
 
 
@@ -66,6 +67,33 @@ def _migration_2_query_indexes():
         if table in tables:
             db.session.execute(text(statement))
 
+
+
+def _migration_3_quote_integrity():
+    """Remove legacy duplicate pending quotes, then enforce one pending quote per vendor/order."""
+    inspector = inspect(db.engine)
+    tables = set(inspector.get_table_names())
+    if "quotation" not in tables:
+        return
+    from models.quotation import Quotation
+    pending = (
+        Quotation.query
+        .filter(Quotation.status == "pending")
+        .order_by(Quotation.work_order_id, Quotation.vendor_id, Quotation.id.desc())
+        .all()
+    )
+    seen = set()
+    for quote in pending:
+        key = (quote.work_order_id, quote.vendor_id)
+        if key in seen:
+            db.session.delete(quote)
+        else:
+            seen.add(key)
+    db.session.flush()
+    db.session.execute(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_quotation_pending_vendor_order "
+        "ON quotation (work_order_id, vendor_id) WHERE status = 'pending'"
+    ))
 
 def migration_status():
     """Return applied and pending migration metadata without changing the schema."""

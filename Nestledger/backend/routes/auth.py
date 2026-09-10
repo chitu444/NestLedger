@@ -126,7 +126,13 @@ def login():
         return {"error": "Invalid email or password"}, 401
 
     user = User.query.filter_by(email=email).first()
-    if user is None or not user.check_password(password):
+    password_ok = False
+    if user is not None:
+        try:
+            password_ok = user.check_password(password)
+        except (TypeError, ValueError):
+            password_ok = False
+    if user is None or not password_ok:
         return {"error": "Invalid email or password"}, 401
 
     # Keep role mismatch generic so the login endpoint does not disclose which
@@ -162,7 +168,13 @@ def forgot_password():
         return {"error": err}, 400
 
     user = User.query.filter_by(email=email, role="resident").first()
-    if user is None or not current_password or not user.check_password(current_password):
+    password_ok = False
+    if user is not None and current_password:
+        try:
+            password_ok = user.check_password(current_password)
+        except (TypeError, ValueError):
+            password_ok = False
+    if user is None or not password_ok:
         return {"error": "Invalid resident email or temporary password"}, 400
 
     user.set_password(new_password)

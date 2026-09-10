@@ -3,7 +3,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, current_app, jsonify, request, send_from_directory
+from flask import Flask, current_app, g, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from sqlalchemy import text
@@ -50,17 +50,18 @@ app = Flask(
     static_url_path="",
 )
 
-app_env = os.getenv("APP_ENV", "development").lower()
+app_env = os.getenv("APP_ENV", "production" if os.getenv("VERCEL") == "1" else "development").lower()
+is_production = app_env == "production" or os.getenv("VERCEL") == "1"
 secret_key = os.getenv("SECRET_KEY", "nestledger-dev-secret")
 jwt_secret_key = os.getenv("JWT_SECRET_KEY", "nestledger-dev-jwt-secret")
 
-if app_env == "production" and (
+if is_production and (
     secret_key == "nestledger-dev-secret"
     or jwt_secret_key == "nestledger-dev-jwt-secret"
 ):
     raise RuntimeError("Set SECRET_KEY and JWT_SECRET_KEY before production deployment.")
 
-if app_env == "production" and (
+if is_production and (
     not os.getenv("ADMIN_EMAIL", "").strip()
     or not os.getenv("ADMIN_PASSWORD", "")
 ):
@@ -78,6 +79,7 @@ app.config.update(
     RAZORPAY_KEY_ID=os.getenv("RAZORPAY_KEY_ID", ""),
     RAZORPAY_KEY_SECRET=os.getenv("RAZORPAY_KEY_SECRET", ""),
     RAZORPAY_WEBHOOK_SECRET=os.getenv("RAZORPAY_WEBHOOK_SECRET", ""),
+    RAZORPAY_MAX_ORDER_AMOUNT_INR=os.getenv("RAZORPAY_MAX_ORDER_AMOUNT_INR", "500000"),
 )
 
 # CORS is opt-in. Same-origin Vercel/Flask deployments do not need it.
@@ -86,7 +88,39 @@ if cors_origins:
     CORS(app, origins=[x.strip() for x in cors_origins.split(",") if x.strip()],
          supports_credentials=False, max_age=86400)
 db.init_app(app)
-JWTManager(app)
+jwt = JWTManager(app)
+
+
+def _api_error(code, message, status, *, request_id=None):
+    payload = {"ok": False, "error": {"code": code, "message": message}}
+    if request_id:
+        payload["error"]["request_id"] = request_id
+    return jsonify(payload), status
+
+
+@jwt.unauthorized_loader
+def jwt_missing(reason):
+    return _api_error("AUTH_REQUIRED", "Authentication is required. Please sign in.", 401)
+
+
+@jwt.invalid_token_loader
+def jwt_invalid(reason):
+    return _api_error("INVALID_TOKEN", "Your session token is invalid. Please sign in again.", 401)
+
+
+@jwt.expired_token_loader
+def jwt_expired(jwt_header, jwt_payload):
+    return _api_error("TOKEN_EXPIRED", "Your session has expired. Please sign in again.", 401)
+
+
+@jwt.revoked_token_loader
+def jwt_revoked(jwt_header, jwt_payload):
+    return _api_error("TOKEN_REVOKED", "Your session is no longer valid. Please sign in again.", 401)
+
+
+@jwt.needs_fresh_token_loader
+def jwt_fresh_required(jwt_header, jwt_payload):
+    return _api_error("FRESH_TOKEN_REQUIRED", "Please sign in again to perform this action.", 401)
 
 for blueprint in (
     auth_bp,
@@ -139,6 +173,7 @@ with app.app_context():
 
 @app.before_request
 def reset_database_session():
+    g.request_id = uuid.uuid4().hex[:12]
     # Vercel/serverless workers may reuse a Python process between requests.
     # Clear any transaction left in a failed state before a new API request.
     if request.path.startswith("/api/"):
@@ -160,6 +195,7 @@ def rollback_failed_request(error=None):
 @app.after_request
 def security_and_cache_headers(response):
     """Apply small, deployment-safe HTTP hardening and static caching."""
+    response.headers.setdefault("X-Request-ID", getattr(g, "request_id", uuid.uuid4().hex[:12]))
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -171,7 +207,7 @@ def security_and_cache_headers(response):
         "img-src 'self' data: blob:; connect-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://generativelanguage.googleapis.com; "
         "frame-src https://api.razorpay.com https://checkout.razorpay.com; object-src 'none'; base-uri 'self'; form-action 'self'"
     )
-    if request.path.startswith("/api/"):
+    if request.path.startswith("/api/") or (response.content_type and response.content_type.startswith("text/html")):
         response.headers["Cache-Control"] = "no-store"
     elif response.content_type and (response.content_type.startswith("text/css") or response.content_type.startswith("application/javascript")):
         response.headers.setdefault("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400")
@@ -181,7 +217,7 @@ def security_and_cache_headers(response):
 @app.errorhandler(400)
 def bad_request(error):
     if request.path.startswith("/api/"):
-        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "The request could not be processed."}}, 400
+        return _api_error("BAD_REQUEST", "The request could not be processed.", 400)
     return error
 
 
@@ -195,13 +231,27 @@ def not_found(error):
 @app.errorhandler(405)
 def method_not_allowed(error):
     if request.path.startswith("/api/"):
-        return {"ok": False, "error": {"code": "METHOD_NOT_ALLOWED", "message": "This method is not allowed for the requested resource."}}, 405
+        return _api_error("METHOD_NOT_ALLOWED", "This method is not allowed for the requested resource.", 405)
+    return error
+
+
+@app.errorhandler(401)
+def unauthorized(error):
+    if request.path.startswith("/api/"):
+        return _api_error("AUTH_REQUIRED", "Authentication is required. Please sign in.", 401)
+    return error
+
+
+@app.errorhandler(422)
+def unprocessable_entity(error):
+    if request.path.startswith("/api/"):
+        return _api_error("UNPROCESSABLE_ENTITY", "The request could not be validated.", 422)
     return error
 
 
 @app.errorhandler(413)
 def request_too_large(error):
-    return ({"ok": False, "error": {"code": "PAYLOAD_TOO_LARGE", "message": "The request body is too large."}}, 413)
+    return _api_error("PAYLOAD_TOO_LARGE", "The request body is too large.", 413) if request.path.startswith("/api/") else error
 
 
 @app.errorhandler(IntegrityError)
@@ -209,7 +259,7 @@ def integrity_error(error):
     db.session.rollback()
     current_app.logger.exception("Database integrity error")
     if request.path.startswith("/api/"):
-        return {"ok": False, "error": {"code": "CONFLICT", "message": "The request conflicts with existing data. Check for a duplicate record and try again."}}, 409
+        return _api_error("CONFLICT", "The request conflicts with existing data. Check for a duplicate record and try again.", 409)
     return error
 
 
@@ -218,7 +268,7 @@ def database_unavailable(error):
     db.session.rollback()
     current_app.logger.exception("Database operational error")
     if request.path.startswith("/api/"):
-        return {"ok": False, "error": {"code": "DATABASE_UNAVAILABLE", "message": "The database is temporarily unavailable. Please try again."}}, 503
+        return _api_error("DATABASE_UNAVAILABLE", "The database is temporarily unavailable. Please try again.", 503)
     return error
 
 
@@ -227,7 +277,7 @@ def database_error(error):
     db.session.rollback()
     current_app.logger.exception("Database error")
     if request.path.startswith("/api/"):
-        return {"ok": False, "error": {"code": "DATABASE_ERROR", "message": "The database could not complete this request. Please try again."}}, 503
+        return _api_error("DATABASE_ERROR", "The database could not complete this request. Please try again.", 503)
     return error
 
 
@@ -235,7 +285,7 @@ def database_error(error):
 def value_error(error):
     if request.path.startswith("/api/"):
         db.session.rollback()
-        return {"ok": False, "error": {"code": "INVALID_VALUE", "message": str(error)[:300] or "The request contains an invalid value."}}, 400
+        return _api_error("INVALID_VALUE", "The request contains an invalid value.", 400)
     return error
 
 
@@ -248,7 +298,7 @@ def internal_server_error(error):
     request_id = uuid.uuid4().hex[:12]
     current_app.logger.exception("Unhandled API/server exception [%s]", request_id)
     if request.path.startswith("/api/"):
-        return {"ok": False, "error": {"code": "INTERNAL_SERVER_ERROR", "message": "The server could not complete this request.", "request_id": request_id}}, 500
+        return _api_error("INTERNAL_SERVER_ERROR", "The server could not complete this request.", 500, request_id=request_id)
     return error
 
 
@@ -278,7 +328,6 @@ def api_health():
                 "latest": migrations["latest"],
                 "pending": len(migrations["pending"]),
             },
-            "environment": app_env,
         }), 200 if ready else 503
     except Exception:
         db.session.rollback()
@@ -288,7 +337,7 @@ def api_health():
 
 @app.get("/api/<path:missing>")
 def api_not_found(missing: str):
-    return {"error": "API endpoint not found"}, 404
+    return _api_error("NOT_FOUND", "API endpoint not found.", 404)
 
 
 @app.get("/<path:path>")

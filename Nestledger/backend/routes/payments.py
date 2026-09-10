@@ -72,6 +72,13 @@ def create_payment_order(*, uid, amount, description, receipt, notes, bill_id=No
     amount_paise = _amount_paise(amount)
     if amount_paise is None:
         return None, ({"error": "Payment amount must be at least ₹1.00 and must be a valid number."}, 400)
+    try:
+        max_amount_paise = int(Decimal(str(current_app.config.get("RAZORPAY_MAX_ORDER_AMOUNT_INR", 500000))) * 100)
+    except (InvalidOperation, TypeError, ValueError):
+        max_amount_paise = 50000000
+    if max_amount_paise < 100 or amount_paise > max_amount_paise:
+        max_rupees = max_amount_paise / 100
+        return None, ({"error": f"Payment amount exceeds the configured Razorpay order limit of ₹{max_rupees:,.0f}."}, 400)
 
     # Razorpay requires a unique receipt of at most 40 characters.
     receipt = str(receipt or "").strip()[:32] + "-" + uuid.uuid4().hex[:7]
@@ -136,7 +143,7 @@ def list_payments():
 @jwt_required()
 def create_order():
     uid = current_user_id(); data = request.get_json(silent=True) or {}
-    bill = MaintenanceBill.query.filter_by(id=data.get("bill_id"), user_id=uid).first()
+    bill = MaintenanceBill.query.filter_by(id=data.get("bill_id"), user_id=uid).with_for_update().first()
     if bill is None: return {"error": "Bill not found"}, 404
     if bill.status == "paid": return {"error": "Bill is already paid"}, 400
     pending = Payment.query.filter_by(bill_id=bill.id, user_id=uid, status="created").order_by(Payment.id.desc()).first()
@@ -161,7 +168,7 @@ def create_order():
 @jwt_required()
 def create_work_order_payment():
     uid = current_user_id(); data = request.get_json(silent=True) or {}
-    order = WorkOrder.query.filter_by(id=data.get("work_order_id"), resident_id=uid).first()
+    order = WorkOrder.query.filter_by(id=data.get("work_order_id"), resident_id=uid).with_for_update().first()
     if order is None: return {"error": "Work order not found"}, 404
     if order.vendor_id is None: return {"error": "A vendor must accept the request before payment"}, 400
     if order.status not in {"accepted", "in_progress", "completed"}: return {"error": "This work order is not ready for payment"}, 400
@@ -200,7 +207,7 @@ def verify():
     if not all((order_id, payment_id, signature)):
         return {"error": "Incomplete payment verification data"}, 400
 
-    payment = Payment.query.filter_by(user_id=uid, razorpay_order_id=order_id).first()
+    payment = Payment.query.filter_by(user_id=uid, razorpay_order_id=order_id).with_for_update().first()
     if payment is None:
         return {"error": "Payment order not found"}, 404
     if payment.status == "paid":
@@ -229,8 +236,12 @@ def verify():
             return {"error": "Invalid local payment amount"}, 400
         if remote_amount != expected_amount:
             return {"error": "Payment amount mismatch"}, 400
-        if remote_payment.get("status") not in {"authorized", "captured"}:
-            return {"error": "Payment is not authorized or captured yet"}, 400
+        if str(remote_payment.get("currency") or "INR").upper() != "INR":
+            return {"error": "Payment currency mismatch"}, 400
+        # An authorized payment is not necessarily settled. Marking it paid
+        # locally before capture can falsely close a maintenance bill.
+        if remote_payment.get("status") != "captured":
+            return {"error": "Payment has not been captured yet"}, 409
     except Exception:
         return {"error": "Unable to reconcile payment with Razorpay"}, 502
 
@@ -292,9 +303,30 @@ def razorpay_webhook():
 
     webhook_event = PaymentWebhookEvent(event_id=str(event_id), event_type=event_type)
     db.session.add(webhook_event)
+    try:
+        db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        return {"ok": True, "duplicate": True}
 
     local_payment = Payment.query.filter_by(razorpay_order_id=order_id).first() if order_id else None
     if local_payment:
+        # A signed webhook proves authenticity, but we still reconcile the
+        # monetary fields before changing local payment state.
+        event_amount = payment_entity.get("amount") or order_entity.get("amount")
+        event_currency = str(payment_entity.get("currency") or order_entity.get("currency") or "INR").upper()
+        expected_amount = _amount_paise(local_payment.amount)
+        if event_currency != "INR" or expected_amount is None or event_amount is None:
+            db.session.rollback()
+            return {"error": "Webhook payment data could not be reconciled"}, 400
+        try:
+            if int(event_amount) != expected_amount:
+                db.session.rollback()
+                return {"error": "Webhook payment amount mismatch"}, 400
+        except (TypeError, ValueError):
+            db.session.rollback()
+            return {"error": "Webhook payment amount is invalid"}, 400
+
         if event_type in {"payment.captured", "order.paid"} and payment_id:
             _mark_payment_paid(local_payment, payment_id)
         elif event_type == "payment.failed" and local_payment.status != "paid":

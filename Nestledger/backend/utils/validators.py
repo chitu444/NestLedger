@@ -8,6 +8,7 @@ server-side before data is trusted.
 Each ``valid_*`` function returns ``(is_valid: bool, error: str | None)``.
 """
 
+import math
 import re
 from datetime import datetime
 
@@ -28,7 +29,7 @@ REQUEST_CATEGORY_TO_JOB = {
 
 
 def valid_email(value: str):
-    value = (value or "").strip()
+    value = str(value or "").strip()
     if not value:
         return False, "Email is required"
     if len(value) > 160:
@@ -39,11 +40,13 @@ def valid_email(value: str):
 
 
 def valid_phone(value: str, *, required: bool = False):
-    value = (value or "").strip()
+    value = str(value or "").strip()
     if not value:
         if required:
             return False, "Phone number is required"
         return True, None
+    if not re.fullmatch(r"[+\d\s().-]+", value):
+        return False, "Enter a valid 10-digit Indian phone number"
     digits = re.sub(r"\D", "", value)
     # Allow a leading country code (e.g. 91) before the 10-digit number.
     if len(digits) == 12 and digits.startswith("91"):
@@ -54,7 +57,7 @@ def valid_phone(value: str, *, required: bool = False):
 
 
 def valid_password(value: str):
-    value = value or ""
+    value = str(value or "")
     if not value:
         return False, "Password is required"
     if len(value) < 8:
@@ -63,7 +66,7 @@ def valid_password(value: str):
 
 
 def required_text(value: str, field_name: str = "This field", *, min_len: int = 1, max_len: int = 5000):
-    value = (value or "").strip()
+    value = str(value or "").strip()
     if not value:
         return False, f"{field_name} is required"
     if len(value) < min_len:
@@ -79,7 +82,7 @@ def valid_date(value: str, *, required: bool = False, fmt: str = "%Y-%m-%d"):
     NestLedger also accepts free-text due dates (e.g. "10 Sep 2026") in a
     few legacy forms; those are treated as required_text, not valid_date.
     """
-    value = (value or "").strip()
+    value = str(value or "").strip()
     if not value:
         if required:
             return False, "Date is required"
@@ -96,6 +99,8 @@ def valid_amount(value, *, allow_zero: bool = True):
         amount = float(value)
     except (TypeError, ValueError):
         return False, "Amount must be a valid number"
+    if not math.isfinite(amount):
+        return False, "Amount must be a finite number"
     if amount < 0:
         return False, "Amount cannot be negative"
     if not allow_zero and amount == 0:
@@ -104,7 +109,7 @@ def valid_amount(value, *, allow_zero: bool = True):
 
 
 def valid_status(value: str, allowed: set):
-    value = (value or "").strip()
+    value = str(value or "").strip()
     if value not in allowed:
         return False, f"Status must be one of: {', '.join(sorted(allowed))}"
     return True, None

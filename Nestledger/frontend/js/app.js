@@ -5,11 +5,26 @@ let toastTimer=null;
 const $=s=>document.querySelector(s);
 const renderIcons=()=>{if(window.lucide&&typeof window.lucide.createIcons==='function')window.lucide.createIcons({attrs:{'stroke-width':1.8}})};
 const THEME_KEY='nestledger-theme';
-function getTheme(){return localStorage.getItem(THEME_KEY)==='dark'?'dark':'light'}
-function applyTheme(theme=getTheme()){const t=theme==='dark'?'dark':'light';document.documentElement.dataset.theme=t;localStorage.setItem(THEME_KEY,t);return t}
+function getTheme(){try{return localStorage.getItem(THEME_KEY)==='dark'?'dark':'light'}catch{return 'light'}}
+function applyTheme(theme=getTheme()){const t=theme==='dark'?'dark':'light';document.documentElement.dataset.theme=t;try{localStorage.setItem(THEME_KEY,t)}catch{}return t}
 function themeToggleHtml(){const dark=getTheme()==='dark';return `<button type="button" class="theme-toggle" id="themeToggle" aria-label="${dark?'Switch to light mode':'Switch to dark mode'}" title="${dark?'Light mode':'Dark mode'}"><i data-lucide="${dark?'sun':'moon'}"></i></button>`}
 function bindThemeToggle(){const b=$('#themeToggle');if(!b)return;b.onclick=()=>{const root=document.documentElement;root.classList.add('theme-transition');const t=applyTheme(getTheme()==='dark'?'light':'dark');b.setAttribute('aria-label',t==='dark'?'Switch to light mode':'Switch to dark mode');b.title=t==='dark'?'Light mode':'Dark mode';b.innerHTML=`<i data-lucide="${t==='dark'?'sun':'moon'}"></i>`;renderIcons();window.clearTimeout(window.__nlThemeTransitionTimer);window.__nlThemeTransitionTimer=window.setTimeout(()=>root.classList.remove('theme-transition'),430)}}
 applyTheme();
+let lastClientErrorAt=0;
+function reportClientError(message, error){
+  console.error('[NestLedger]', message, error||'');
+  const now=Date.now();
+  if(now-lastClientErrorAt<2500)return;
+  lastClientErrorAt=now;
+  if(document.getElementById('toast')) toast(message);
+}
+window.addEventListener('error', e=>reportClientError('Something went wrong. Please try again.', e.error||e.message));
+window.addEventListener('unhandledrejection', e=>{
+  const reason=e.reason;
+  if(reason?.code==='REQUEST_TIMEOUT') reportClientError('The request timed out. Please try again.', reason);
+  else if(reason?.code==='NETWORK_ERROR') reportClientError('Unable to reach NestLedger. Please check your connection.', reason);
+  else reportClientError('Something went wrong. Please try again.', reason);
+});
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const NAV_BY_ROLE={
   resident:[['dashboard','house','dashboard'],['payments','indian-rupee','payments'],['receipts','receipt-text','receipts'],['workorders','wrench','maintenance'],['complaints','circle-alert','complaints'],['notices','megaphone','notices']],
@@ -28,7 +43,9 @@ async function api(path,opt={}){
     if(f.q)u.searchParams.set('q',f.q); if(f.status)u.searchParams.set('status',f.status);
     u.searchParams.set('page',String(f.page||1)); u.searchParams.set('per_page','20'); path=u.pathname+u.search;
   }
-  return window.NLApi.request(path,opt)
+  const requestOptions={...opt};
+  if(window.__NLPageLoadSeq!=null && requestOptions.pageSeq===undefined) requestOptions.pageSeq=window.__NLPageLoadSeq;
+  return window.NLApi.request(path,requestOptions)
 }
 
 function saveSession(d){window.NLState.saveSession(d)}
@@ -130,6 +147,7 @@ async function loadPage(options={}){
   const c=$('#content');if(!c)return;
   const silent=Boolean(options.silent);
   const seq=++pageLoadSeq;
+  window.__NLPageLoadSeq=seq;
   // Background refreshes must never replace a usable page with a disruptive
   // full-page "Loading live data" state. Only show the loader on first load
   // (or when there is no content to preserve).
@@ -146,7 +164,7 @@ async function loadPage(options={}){
     // During a silent refresh, keep the last good screen if the refresh fails.
     if(silent && hasContent){toast(e.message||i18n.t('requestFailed'));return}
     c.innerHTML=`<div class="panel error-state"><i data-lucide="triangle-alert"></i><h3>${esc(e.message)}</h3><button class="secondary" type="button" onclick="loadPage()">${i18n.t('retry')||'Retry'}</button></div>`;
-  }finally{if(seq===pageLoadSeq){c.removeAttribute('aria-busy');c.classList.remove('is-loading');renderIcons()}}
+  }finally{if(seq===pageLoadSeq){c.removeAttribute('aria-busy');c.classList.remove('is-loading');renderIcons();window.__NLPageLoadSeq=null}}
 }
 function go(p){return window.NLRouter.navigate(p)}
 function viewResidentPayments(name){state.listFilters=state.listFilters||{};state.listFilters.payments=state.listFilters.payments||{page:1,q:'',status:''};state.listFilters.payments.q=decodeURIComponent(name||'');state.listFilters.payments.page=1;const m=$('#residentDetailModal');if(m)m.remove();go('payments')}
@@ -334,7 +352,7 @@ async function expenses(c){const d=await api('/admin/expenses');c.innerHTML=`<di
 function expenseModal(){document.body.insertAdjacentHTML('beforeend',`<div class="modal-backdrop" id="modal"><div class="modal"><button class="close" onclick="$('#modal').remove()">×</button><h3>${i18n.t('addExpenseModalTitle')}</h3><form id="ef"><div class="field"><label>${i18n.t('categoryLabel')}</label><input id="ec" required></div><div class="field"><label>${i18n.t('descriptionLabel')}</label><input id="ed" required></div><div class="field"><label>${i18n.t('amountLabel')}</label><input id="ea" type="number" min="0" step="0.01" required></div><button class="primary">${i18n.t('saveExpense')}</button></form></div></div>`);$('#ef').onsubmit=async e=>{e.preventDefault();try{await api('/admin/expenses',{method:'POST',body:JSON.stringify({category:$('#ec').value,description:$('#ed').value,amount:Number($('#ea').value)})});$('#modal').remove();toast(i18n.t('expenseAdded'));loadPage()}catch(x){toast(x.message)}}}
 async function workorders(c){const d=await api('/work-orders');const list=d.work_orders;if(state.role==='resident'){c.innerHTML=`<div class="page-title"><h2>${i18n.t('maintenanceRequests')}</h2><p>${i18n.t('maintenanceRequestsSubtitle')}</p></div><button class="primary" style="width:auto;margin-bottom:15px" onclick="workOrderModal()">${i18n.t('newRequest')}</button>${list.length?list.map(residentOrderCard).join(''):`<div class="panel empty">${i18n.t('noRequestsYet')}</div>`}`}else if(state.role==='vendor'){const buckets=[['open',i18n.t('openRequests'),vendorOpenCard],['accepted',i18n.t('waitingToStart'),vendorMineCard],['in_progress',i18n.t('inProgress'),vendorMineCard],['completed',i18n.t('completed'),vendorMineCard],['cancelled',i18n.t('cancelledWithdrawn'),vendorMineCard]];c.innerHTML=`<div class="page-title"><h2>${i18n.t('jobBoardTitle')}</h2><p>${i18n.t('jobBoardSubtitle')}</p></div>${buckets.map(([status,label,cardFn])=>{const items=list.filter(w=>w.status===status);return `<div class="section-label">${label} · ${items.length}</div>${items.length?items.map(cardFn).join(''):`<div class="panel empty">${i18n.t('noData')}</div>`}`}).join('')}<div class="section-label">${i18n.t('myQuotationsTitle')}</div><div id="myQuotesBox"><div class="panel empty">${i18n.t('loading')}</div></div>`;try{const qd=await api('/vendors/me/quotes');const box=$('#myQuotesBox');if(box)box.innerHTML=qd.quotes.length?qd.quotes.map(quoteHistoryCard).join(''):`<div class="panel empty">${i18n.t('noQuotesSubmittedYet')}</div>`}catch(e){const box=$('#myQuotesBox');if(box)box.innerHTML=`<div class="error">${esc(e.message)}</div>`}}else{c.innerHTML=`<div class="page-title"><h2>${i18n.t('workorders')}</h2><p>${i18n.t('workOrdersSubtitle')}</p></div><button class="primary" style="width:auto;margin-bottom:15px" onclick="workOrderModal(true)">${i18n.t('postWorkOrder')}</button>${list.length?list.map(adminOrderCard).join(''):`<div class="panel empty">${i18n.t('noWorkOrdersYet')}</div>`}`}}
 const PAGE_LOADERS={dashboard,payments,receipts,workorders,complaints,notices,profile,residents,vendors,vendorperformance,expenses,reports:businessIntelligence};
-async function bootstrap(){if(!state.token){render();return}try{const d=await api('/auth/me');state.user=d.user;state.role=d.user.role;localStorage.setItem('nestledgerUser',JSON.stringify(d.user));window.NLRouter.syncFromUrl();render()}catch{window.NLState.clearSession();renderAuth('login')}}
+async function bootstrap(){if(!state.token){render();return}try{const d=await api('/auth/me');state.user=d.user;state.role=d.user.role;try{localStorage.setItem('nestledgerUser',JSON.stringify(d.user))}catch{}window.NLRouter.syncFromUrl();render()}catch(e){if(e?.status===401||e?.status===403){window.NLState.clearSession();renderAuth('login')}else{renderShell();toast(e?.message||i18n.t('requestFailed'))}}}
 window.addEventListener('popstate',()=>{if(!state.token)return;window.NLRouter.syncFromUrl();updateNavActive();loadPage()});
 bootstrap();
 // Keep data reasonably fresh without interrupting the page the user is reading.

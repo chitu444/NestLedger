@@ -53,7 +53,7 @@ def reports():
     # loaded every payment/expense/work-order row into Python on every refresh.
     collection = float(
         db.session.query(func.coalesce(func.sum(Payment.amount), 0))
-        .filter(Payment.status == "paid")
+        .filter(Payment.status == "paid", Payment.bill_id.isnot(None))
         .scalar()
         or 0
     )
@@ -67,7 +67,7 @@ def reports():
 
     now, months, start = six_month_window()
     payments = (
-        Payment.query.filter(Payment.status == "paid", Payment.created_at >= start)
+        Payment.query.filter(Payment.status == "paid", Payment.bill_id.isnot(None), Payment.created_at >= start)
         .with_entities(Payment.created_at, Payment.amount)
         .all()
     )

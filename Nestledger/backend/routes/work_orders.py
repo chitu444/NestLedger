@@ -266,7 +266,10 @@ def accept_order(wid):
     if profile is None:
         return {"error": "No vendor profile found for this account"}, 400
 
-    order = db.session.get(WorkOrder, wid)
+    # Lock the order while claiming it so two vendors cannot accept the same
+    # open job concurrently. PostgreSQL enforces this row lock; SQLite still
+    # serializes writes at the database level.
+    order = db.session.get(WorkOrder, wid, with_for_update=True)
     if order is None:
         return {"error": "Work order not found"}, 404
     if order.status != "open" or order.vendor_id is not None:
@@ -307,7 +310,7 @@ def withdraw_order(wid):
     if profile is None:
         return {"error": "No vendor profile found for this account"}, 400
 
-    order = db.session.get(WorkOrder, wid)
+    order = db.session.get(WorkOrder, wid, with_for_update=True)
     if order is None:
         return {"error": "Work order not found"}, 404
     if order.vendor_id != profile.id:
@@ -345,7 +348,7 @@ def withdraw_order(wid):
 @jwt_required()
 def update_status(wid):
     user = current_user()
-    order = db.session.get(WorkOrder, wid)
+    order = db.session.get(WorkOrder, wid, with_for_update=True)
 
     if order is None:
         return {"error": "Work order not found"}, 404
@@ -425,7 +428,7 @@ def submit_quote(wid):
     if profile is None:
         return {"error": "No active vendor profile found for this account"}, 400
 
-    order = db.session.get(WorkOrder, wid)
+    order = db.session.get(WorkOrder, wid, with_for_update=True)
     if order is None:
         return {"error": "Work order not found"}, 404
     if order.status != "open" or order.vendor_id is not None:
@@ -461,7 +464,23 @@ def submit_quote(wid):
         db.session.add(quote)
         created = True
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        # The database-level partial unique index is the final guard against
+        # concurrent duplicate pending quotes. If another request won the
+        # race, return/update that quote instead of surfacing a 500.
+        db.session.rollback()
+        existing = Quotation.query.filter_by(
+            work_order_id=order.id, vendor_id=profile.id, status="pending"
+        ).first()
+        if existing is not None:
+            existing.amount = amount
+            existing.note = note
+            existing.updated_at = datetime.utcnow()
+            db.session.commit()
+            return {"quote": existing.to_dict()}, 200
+        raise
 
     if created and order.resident_id:
         notify(
@@ -523,7 +542,9 @@ def accept_quote(wid, qid):
     if user is None:
         return {"error": "User not found"}, 404
 
-    order = db.session.get(WorkOrder, wid)
+    # Lock the parent work order first so two simultaneous quote accepts
+    # cannot both observe an open order and assign different vendors.
+    order = db.session.get(WorkOrder, wid, with_for_update=True)
     if order is None:
         return {"error": "Work order not found"}, 404
 
@@ -590,7 +611,7 @@ def reject_quote(wid, qid):
     if user is None:
         return {"error": "User not found"}, 404
 
-    order = db.session.get(WorkOrder, wid)
+    order = db.session.get(WorkOrder, wid, with_for_update=True)
     if order is None:
         return {"error": "Work order not found"}, 404
 
@@ -599,7 +620,7 @@ def reject_quote(wid, qid):
     if user.role not in {"resident", "admin"}:
         return {"error": "Not authorized"}, 403
 
-    quote = db.session.get(Quotation, qid)
+    quote = db.session.get(Quotation, qid, with_for_update=True)
     if quote is None or quote.work_order_id != order.id:
         return {"error": "Quote not found"}, 404
     if quote.status != "pending":
@@ -632,8 +653,12 @@ def withdraw_quote(wid, qid):
     if profile is None:
         return {"error": "No vendor profile found for this account"}, 400
 
-    quote = db.session.get(Quotation, qid)
-    if quote is None or quote.work_order_id != wid:
+    order = db.session.get(WorkOrder, wid, with_for_update=True)
+    if order is None:
+        return {"error": "Work order not found"}, 404
+
+    quote = db.session.get(Quotation, qid, with_for_update=True)
+    if quote is None or quote.work_order_id != order.id:
         return {"error": "Quote not found"}, 404
     if quote.vendor_id != profile.id:
         return {"error": "You can only withdraw your own quotes"}, 403
@@ -662,7 +687,7 @@ def rate_order(wid):
     if user is None or user.role != "resident":
         return {"error": "Only residents can rate a vendor"}, 403
 
-    order = db.session.get(WorkOrder, wid)
+    order = db.session.get(WorkOrder, wid, with_for_update=True)
     if order is None:
         return {"error": "Work order not found"}, 404
     if order.resident_id != user.id:

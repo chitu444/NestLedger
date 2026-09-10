@@ -4,7 +4,7 @@
     catch { localStorage.removeItem('nestledgerUser'); return null; }
   }
   const state = window.NLState = window.NLState || {
-    token: localStorage.getItem('nestledgerToken'),
+    token: (()=>{try{return localStorage.getItem('nestledgerToken')}catch{return null}})(),
     user: readUser(),
     role: 'resident',
     page: 'dashboard',
@@ -13,14 +13,12 @@
   state.role = state.user?.role || 'resident';
   state.bump = () => ++state.version;
   state.clearSession = () => {
-    localStorage.removeItem('nestledgerToken');
-    localStorage.removeItem('nestledgerUser');
+    try { localStorage.removeItem('nestledgerToken'); localStorage.removeItem('nestledgerUser'); } catch {}
     state.token = null; state.user = null; state.role = 'resident'; state.page = 'dashboard'; state.bump();
   };
   state.saveSession = (d) => {
     state.token = d.token; state.user = d.user; state.role = d.user?.role || 'resident'; state.bump();
-    localStorage.setItem('nestledgerToken', d.token);
-    localStorage.setItem('nestledgerUser', JSON.stringify(d.user));
+    try { localStorage.setItem('nestledgerToken', d.token); localStorage.setItem('nestledgerUser', JSON.stringify(d.user)); } catch {}
   };
   state.can = (permission) => {
     const permissions = {
