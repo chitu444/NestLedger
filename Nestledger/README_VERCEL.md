@@ -21,3 +21,13 @@
 The Flask application is exported as `app` from `api/index.py`. The frontend is served by Flask and API routes remain under `/api/...`.
 
 Use PostgreSQL in production. Do not rely on the local SQLite database on Vercel.
+
+## Razorpay production checks
+
+For a new Razorpay merchant account, generate the correct **Live** or **Test** keys from the Razorpay Dashboard and keep the secret only in Vercel environment variables. Live API keys require the website/app details to be verified by Razorpay; Test keys can be generated without website verification. After deployment, an admin can call `GET /api/payments/health` while signed in to verify that Vercel can authenticate to Razorpay's Orders API without creating a payment.
+
+NestLedger also handles an `authorized` Razorpay payment by attempting a server-side capture before marking the local bill/payment as paid. This prevents a manual-capture or late-authorisation state from looking like a successful payment in the UI. Razorpay still recommends configuring automatic capture for normal Orders API integrations.
+
+## Voice navigation
+
+Voice navigation uses the browser SpeechRecognition API. The UI now reports the actual recognition lifecycle instead of showing `Listening…` before the browser has started recognition. Network, microphone, permission, no-speech, and unsupported-browser states are surfaced explicitly. Chrome/Edge are recommended for the web voice feature; browsers without SpeechRecognition should not display a false listening state.

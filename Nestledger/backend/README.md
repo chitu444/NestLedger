@@ -53,7 +53,7 @@ For deployment, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the environment and us
 
 The backend refuses to create an order until `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` are configured. Use Razorpay Test Mode first. Never expose the secret key in frontend code.
 
-For reliable payment reconciliation, set a separate `RAZORPAY_WEBHOOK_SECRET` and configure a public HTTPS webhook at `/api/payments/webhook`. Subscribe to `payment.captured`, `payment.failed`, and `order.paid`. The application verifies the Razorpay webhook signature against the raw request body and de-duplicates events by Razorpay event ID.
+For reliable payment reconciliation, set a separate `RAZORPAY_WEBHOOK_SECRET` and configure a public HTTPS webhook at `/api/payments/webhook`. Subscribe to `payment.captured`, `payment.failed`, and `order.paid`. The application verifies the Razorpay webhook signature against the raw request body and de-duplicates events by Razorpay event ID. If Razorpay returns a payment in `authorized` state during verification, NestLedger now attempts a server-side capture before marking the local payment paid; this covers manual-capture configurations and late-authorisation cases without exposing the secret to the browser.
 
 ## New features (this upgrade)
 

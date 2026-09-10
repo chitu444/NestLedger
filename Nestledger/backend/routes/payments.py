@@ -115,6 +115,45 @@ def create_payment_order(*, uid, amount, description, receipt, notes, bill_id=No
         return None, ({"error": _provider_error(exc)}, 502)
 
 
+@payments_bp.get("/payments/health")
+@jwt_required()
+def payment_health():
+    """Admin-only Razorpay integration diagnostic. Never returns secrets."""
+    requester = db.session.get(User, current_user_id())
+    if requester is None or requester.role != "admin":
+        return {"error": "Admin access required"}, 403
+
+    key_id = str(current_app.config.get("RAZORPAY_KEY_ID") or "").strip()
+    secret = str(current_app.config.get("RAZORPAY_KEY_SECRET") or "").strip()
+    webhook_secret = str(current_app.config.get("RAZORPAY_WEBHOOK_SECRET") or "").strip()
+    configured = bool(key_id and secret)
+    mode = "live" if key_id.startswith("rzp_live_") else ("test" if key_id.startswith("rzp_test_") else "unknown")
+    result = {
+        "configured": configured,
+        "key_mode": mode,
+        "webhook_configured": bool(webhook_secret),
+        "max_order_amount_inr": str(current_app.config.get("RAZORPAY_MAX_ORDER_AMOUNT_INR", "500000")),
+        "provider_reachable": False,
+        "provider_error": None,
+    }
+    if not configured:
+        result["provider_error"] = "RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are not configured."
+        return result
+
+    client, error = razorpay_client()
+    if error:
+        result["provider_error"] = error[0].get("error") if isinstance(error[0], dict) else "Razorpay client unavailable."
+        return result
+    try:
+        # A harmless authenticated Orders API read verifies that the credentials
+        # work from the deployed Vercel backend without creating a payment.
+        client.order.all({"count": 1})
+        result["provider_reachable"] = True
+    except Exception as exc:
+        result["provider_error"] = _provider_error(exc)
+    return result
+
+
 @payments_bp.get("/bills")
 @jwt_required()
 def bills():
@@ -238,10 +277,26 @@ def verify():
             return {"error": "Payment amount mismatch"}, 400
         if str(remote_payment.get("currency") or "INR").upper() != "INR":
             return {"error": "Payment currency mismatch"}, 400
-        # An authorized payment is not necessarily settled. Marking it paid
-        # locally before capture can falsely close a maintenance bill.
+
+        # Razorpay normally auto-captures Orders, but an account can be configured
+        # for manual capture and late authorisation can also temporarily leave a
+        # payment in `authorized`. New merchant accounts can therefore legitimately
+        # reach this state even though checkout itself succeeded. Capture it from the
+        # server when it is authorized, then fetch the final state before closing the
+        # local bill/payment. The secret remains server-side.
+        if remote_payment.get("status") == "authorized":
+            try:
+                client.payment.capture(payment_id, expected_amount)
+            except Exception as capture_exc:
+                current_app.logger.warning("Razorpay capture attempt failed for %s: %s", payment_id, _provider_error(capture_exc))
+            remote_payment = client.payment.fetch(payment_id)
+
+        # Never mark a payment paid until Razorpay confirms it is captured.
         if remote_payment.get("status") != "captured":
-            return {"error": "Payment has not been captured yet"}, 409
+            remote_status = str(remote_payment.get("status") or "unknown")
+            if remote_status == "authorized":
+                return {"error": "Payment was authorized but could not be captured yet. Please try again or check Razorpay capture settings."}, 409
+            return {"error": f"Razorpay payment is not captured (status: {remote_status})."}, 409
     except Exception:
         return {"error": "Unable to reconcile payment with Razorpay"}, 502
 
@@ -327,7 +382,31 @@ def razorpay_webhook():
             db.session.rollback()
             return {"error": "Webhook payment amount is invalid"}, 400
 
-        if event_type in {"payment.captured", "order.paid"} and payment_id:
+        if event_type == "payment.authorized" and payment_id and local_payment.status != "paid":
+            # Keep webhook reconciliation resilient for merchants using manual
+            # capture or when checkout reaches Razorpay's authorized state first.
+            try:
+                client, client_error = razorpay_client()
+                expected_amount = _amount_paise(local_payment.amount)
+                if client_error:
+                    db.session.rollback()
+                    return client_error
+                if expected_amount is None:
+                    db.session.rollback()
+                    return {"error": "Invalid local payment amount"}, 400
+                client.payment.capture(payment_id, expected_amount)
+                refreshed = client.payment.fetch(payment_id)
+                if refreshed.get("status") == "captured":
+                    _mark_payment_paid(local_payment, payment_id)
+                else:
+                    db.session.commit()
+            except Exception:
+                # Do not falsely mark the payment paid. A later payment.captured
+                # webhook or the user's verification request can reconcile it.
+                db.session.rollback()
+                current_app.logger.exception("Razorpay authorized-payment capture failed")
+                return {"ok": True, "pending_capture": True}
+        elif event_type in {"payment.captured", "order.paid"} and payment_id:
             _mark_payment_paid(local_payment, payment_id)
         elif event_type == "payment.failed" and local_payment.status != "paid":
             local_payment.status = "failed"

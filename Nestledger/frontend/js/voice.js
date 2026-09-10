@@ -388,18 +388,51 @@
     recognition.continuous=true;
     recognition.interimResults=true;
     recognition.maxAlternatives=5;
+    recognition.onstart=()=>{
+      listening=true;
+      restarting=false;
+      updateUI();
+      if(typeof global.toast==='function')global.toast((global.i18n&&global.i18n.t('voiceListening'))||'Listening…');
+    };
+    recognition.onaudiostart=()=>{
+      const status=document.getElementById('chatbotVoiceStatus');
+      if(status&&listening){status.hidden=false;status.textContent=(global.i18n&&global.i18n.t('voiceListening'))||'Listening…';}
+    };
+    recognition.onspeechstart=()=>{
+      const status=document.getElementById('chatbotVoiceStatus');
+      if(status&&listening){status.hidden=false;status.textContent=(global.i18n&&global.i18n.t('voiceUnderstanding'))||'Understanding…';}
+    };
     recognition.onresult=e=>{
       let finalText='';
-      for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)finalText+=' '+e.results[i][0].transcript;
+      let interimText='';
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const transcript=String(e.results[i][0]?.transcript||'').trim();
+        if(e.results[i].isFinal)finalText+=' '+transcript;
+        else interimText+=' '+transcript;
+      }
+      const status=document.getElementById('chatbotVoiceStatus');
+      if(status&&listening){
+        status.hidden=false;
+        status.textContent=finalText.trim() ? ((global.i18n&&global.i18n.t('voiceUnderstanding'))||'Understanding…') : (interimText.trim() ? `Heard: ${interimText.trim()}` : ((global.i18n&&global.i18n.t('voiceListening'))||'Listening…'));
+      }
       if(finalText.trim())handleTranscript(finalText.trim());
     };
     recognition.onerror=e=>{
-      if(e.error==='aborted')return;
-      if(e.error==='not-allowed'||e.error==='service-not-allowed'){
-        listening=false;updateUI();notify('Microphone permission is required for voice control.');return;
+      const err=String(e.error||'').toLowerCase();
+      if(err==='aborted')return;
+      if(err==='not-allowed'||err==='service-not-allowed'){
+        listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceMicPermission'))||'Microphone access is blocked. Please allow it and try again.');return;
       }
-      if(e.error==='no-speech'||e.error==='network'||e.error==='audio-capture')scheduleRestart();
-      else {listening=false;updateUI();notify((global.i18n&&global.i18n.t('voiceTryAgain'))||'Please try again.');}
+      if(err==='audio-capture'){
+        listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceNoMicrophone'))||'No microphone was found on this device.');return;
+      }
+      // A network error is a hard failure for the browser speech service.
+      // Repeatedly restarting only leaves the UI falsely stuck on “Listening…”.
+      if(err==='network'){
+        listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceNetwork'))||'Voice recognition needs an internet connection.');return;
+      }
+      if(err==='no-speech'){scheduleRestart();return;}
+      listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceTryAgain'))||'Please try again.');
     };
     recognition.onend=()=>{if(listening)scheduleRestart();else{restarting=false;updateUI();}};
     return recognition;
@@ -412,16 +445,26 @@
   }
 
   function startListening(){
-    if(!SR){notify((global.i18n&&global.i18n.t('voiceUnsupported'))||'Voice recognition is not supported in this browser.');return false;}
-    if(listening)return true;
+    if(!SR){
+      notify((global.i18n&&global.i18n.t('voiceUnsupported'))||'Voice recognition is not supported in this browser. Try Chrome or Edge for voice navigation.');
+      return false;
+    }
+    if(listening||restarting)return true;
     const r=recognitionInstance();
     r.lang=(global.i18n&&global.i18n.SPEECH_LOCALE&&global.i18n.SPEECH_LOCALE[global.i18n.getLanguage()])||'en-IN';
     try{
       if(global.speechSynthesis)global.speechSynthesis.cancel();
-      listening=true;updateUI();r.start();
-      if(typeof global.toast==='function')global.toast((global.i18n&&global.i18n.t('voiceListening'))||'Listening…');
+      // Do not claim “Listening…” until the recognition engine actually fires
+      // onstart. This prevents a false listening state when the browser rejects
+      // the microphone/service request.
+      restarting=false;
+      r.start();
       return true;
-    }catch(e){listening=false;updateUI();return false;}
+    }catch(e){
+      listening=false;restarting=false;updateUI();
+      notify((global.i18n&&global.i18n.t('voiceTryAgain'))||'Please try again.');
+      return false;
+    }
   }
 
   function mountInlineMic(container){
