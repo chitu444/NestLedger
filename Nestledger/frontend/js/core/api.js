@@ -16,7 +16,7 @@
     const options = { ...opt, headers: { ...(opt.body ? {'Content-Type':'application/json'} : {}), ...(opt.headers || {}) } };
     const method = String(options.method || 'GET').toUpperCase();
     const isGet = method === 'GET';
-    const ttl = options.cacheTtl === undefined ? (isGet ? 8000 : 0) : Number(options.cacheTtl || 0);
+    const ttl = options.cacheTtl === undefined ? (isGet ? 30000 : 0) : Number(options.cacheTtl || 0);
     delete options.cacheTtl;
     const key = cacheKey(path);
     const basePath = String(path).split('?')[0];

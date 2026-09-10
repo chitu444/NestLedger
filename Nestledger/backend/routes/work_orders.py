@@ -497,8 +497,12 @@ def list_quotes(wid):
     elif user.role != "admin":
         return {"error": "Not authorized"}, 403
 
+    # Explicitly eager-load the vendor relationship for this response.
+    # Residents should receive complete quotation data in one request rather
+    # than relying on a later lazy-load of vendor details.
     quotes = (
-        Quotation.query.filter_by(work_order_id=order.id)
+        Quotation.query.options(selectinload(Quotation.vendor))
+        .filter_by(work_order_id=order.id)
         .order_by(Quotation.amount.asc())
         .all()
     )

@@ -1269,3 +1269,24 @@ html.theme-transition .theme-toggle svg{
 #content.is-loading{opacity:.78;transition:opacity .14s ease}
 #content[aria-busy="true"]{will-change:opacity}
 @media(prefers-reduced-motion:reduce){#content.is-loading{transition:none}}
+
+/* Resident quotation focus: make the quoted amount the primary visual element. */
+.quote-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin:0 0 12px;text-align:left;box-shadow:0 5px 18px rgba(22,34,29,.045)}
+.quote-vendor{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.quote-vendor-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--accent2);color:var(--accent)}
+.quote-vendor-icon svg{width:19px;height:19px}
+.quote-kicker,.quote-main>span,.quote-note>span{display:block;font-size:10px;letter-spacing:1.1px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.quote-vendor h4{margin:2px 0 3px;font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:600}
+.quote-vendor p{margin:0;color:var(--muted);font-size:12px}
+.quote-main{text-align:center;padding:18px 8px 15px}
+.quote-main>span{margin-bottom:5px}
+.quote-main strong{display:block;font-family:Georgia,'Times New Roman',serif;font-size:clamp(34px,7vw,48px);line-height:1.05;font-weight:400;letter-spacing:-1px;color:var(--ink)}
+.quote-note{border-top:1px solid var(--line);padding-top:12px}
+.quote-note p{margin:5px 0 0;color:var(--muted);font-family:Georgia,'Times New Roman',serif;font-size:13px;line-height:1.55}
+#quotesContent .empty{padding:34px 18px}
+html[data-theme="dark"] .quote-card{background:#2a252c;border-color:#4a424d;box-shadow:0 8px 24px rgba(0,0,0,.16)}
+html[data-theme="dark"] .quote-vendor{border-color:#4a424d}
+html[data-theme="dark"] .quote-vendor-icon{background:#40364b;color:#d8ccef}
+html[data-theme="dark"] .quote-main strong{color:#f0eae1}
+html[data-theme="dark"] .quote-note{border-color:#4a424d}
+@media(max-width:600px){.quote-card{padding:16px}.quote-vendor{grid-template-columns:auto 1fr}.quote-vendor .badge{grid-column:2;justify-self:start}.quote-main{padding-top:20px}.quote-main strong{font-size:38px}}
