@@ -3,6 +3,7 @@ from calendar import month_name
 
 from flask import Blueprint, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
+from sqlalchemy.exc import IntegrityError
 from utils.auth import current_user
 
 from models.db import db
@@ -15,6 +16,7 @@ from utils.validators import (
     valid_email,
     valid_password,
     valid_phone,
+    valid_apartment,
 )
 
 
@@ -24,6 +26,21 @@ auth_bp = Blueprint("auth", __name__)
 def get_current_user():
     return current_user()
 
+
+@auth_bp.get("/apartments")
+def apartments():
+    """Return the 13x7 apartment map for public registration."""
+    from utils.validators import APARTMENT_CODES
+    occupied = {
+        str(value).strip().upper()
+        for (value,) in db.session.query(User.apartment)
+        .filter(User.role == "resident", User.apartment.isnot(None))
+        .all()
+        if str(value or "").strip().upper() in APARTMENT_CODES
+    }
+    return {
+        "apartments": [{"code": code, "occupied": code in occupied} for code in APARTMENT_CODES]
+    }
 
 @auth_bp.post("/auth/register")
 def register():
@@ -58,8 +75,13 @@ def register():
     if User.query.filter_by(email=email).first():
         return {"error": "Email already registered"}, 409
 
-    # Vendors never have an apartment on file; residents may.
-    apartment = str(data.get("apartment", "")).strip() or None
+    # Public registration uses the fixed A-1 .. Z-7 inventory.
+    apartment = str(data.get("apartment", "")).strip().upper() or None
+    ok, err = valid_apartment(apartment, required=True)
+    if not ok:
+        return {"error": err}, 400
+    if User.query.filter(User.role == "resident", User.apartment == apartment).first():
+        return {"error": f"Apartment {apartment} is already occupied"}, 409
     if role == "vendor":
         apartment = None
 
@@ -72,7 +94,11 @@ def register():
     )
     user.set_password(password)
     db.session.add(user)
-    db.session.flush()
+    try:
+        db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        return {"error": f"Apartment {apartment} is already occupied"}, 409
 
     if role == "vendor":
         vendor = Vendor(
@@ -99,7 +125,11 @@ def register():
         )
         db.session.add(bill)
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return {"error": f"Apartment {apartment} is already occupied"}, 409
 
     if role == "resident":
         from models.notification import notify
@@ -213,10 +243,17 @@ def profile():
     user.name = name
     user.phone = phone or None
     if user.role != "vendor":
-        apartment = str(data.get("apartment", user.apartment or "")).strip()
-        if len(apartment) > 60:
-            return {"error": "Apartment / Flat must be under 60 characters"}, 400
-        user.apartment = apartment or None
+        apartment = str(data.get("apartment", user.apartment or "")).strip().upper()
+        ok, err = valid_apartment(apartment, required=True)
+        if not ok:
+            return {"error": err}, 400
+        if apartment != user.apartment and User.query.filter(User.role == "resident", User.apartment == apartment, User.id != user.id).first():
+            return {"error": f"Apartment {apartment} is already occupied"}, 409
+        user.apartment = apartment
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return {"error": f"Apartment {apartment} is already occupied"}, 409
     return {"user": user.to_dict()}

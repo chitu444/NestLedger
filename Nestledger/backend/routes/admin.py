@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import secrets
 
 from flask import Blueprint, request, Response, send_file
@@ -217,6 +217,24 @@ def add_expense():
         return {"error": err}, 400
     amount = float(data.get("amount"))
 
+    # Server-side duplicate guard for double clicks, browser retries, or duplicate
+    # frontend handlers. Exact matching within a short window is treated as one
+    # submission; legitimate later expenses remain unaffected.
+    recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+    duplicate = (
+        Expense.query
+        .filter(
+            Expense.category == category,
+            Expense.description == description,
+            Expense.amount == amount,
+            Expense.created_at >= recent_cutoff,
+        )
+        .order_by(Expense.id.desc())
+        .first()
+    )
+    if duplicate is not None:
+        return {"expense": duplicate.to_dict(), "duplicate": True}, 200
+
     expense = Expense(
         category=category,
         description=description,
@@ -252,9 +270,9 @@ def add_resident():
     name = str(data.get("name", "")).strip()
     email = str(data.get("email", "")).strip().lower()
     phone = str(data.get("phone", "")).strip()
-    apartment = str(data.get("apartment", "")).strip()
+    apartment = str(data.get("apartment", "")).strip().upper()
 
-    for value, label, max_len in ((name, "Name", 120), (apartment, "Apartment / Flat", 60)):
+    for value, label, max_len in ((name, "Name", 120),):
         ok, err = required_text(value, label, max_len=max_len)
         if not ok:
             return {"error": err}, 400
@@ -264,6 +282,11 @@ def add_resident():
     ok, err = valid_phone(phone, required=True)
     if not ok:
         return {"error": err}, 400
+    ok, err = valid_apartment(apartment, required=True)
+    if not ok:
+        return {"error": err}, 400
+    if User.query.filter(User.role == "resident", User.apartment == apartment).first():
+        return {"error": f"Apartment {apartment} is already occupied"}, 409
     if User.query.filter_by(email=email).first():
         return {"error": "Email already registered"}, 409
 
@@ -273,7 +296,11 @@ def add_resident():
     user = User(name=name, email=email, role="resident", phone=phone, apartment=apartment)
     user.set_password(temporary_password)
     db.session.add(user)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return {"error": f"Apartment {apartment} is already occupied"}, 409
 
     return {
         "message": "Resident account created successfully",
@@ -498,28 +525,39 @@ def payments():
 
 
 def _score_vendor(orders):
-    """Analytics-based vendor performance score (NOT an AI score).
+    """Deterministic vendor performance score (0-100).
 
-    Formula, weighted out of 100:
-      - Completion rate   50% -> completed / (completed + cancelled/withdrawn)
-      - On-time rate      30% -> of completed jobs, share finished by due_date
-      - Cancellation rate 20% -> penalizes accepted jobs that were withdrawn
-                                 (i.e. 20% * (1 - cancellation_rate))
+    The score is based on jobs actually assigned to the vendor:
+      - Completion rate: 50% -> completed / all assigned jobs
+      - On-time completion: 30% -> on-time completed / completed jobs
+      - Reliability: 20% -> 1 - (cancelled / assigned jobs)
 
-    "Withdrawn" jobs are ones this vendor accepted and later returned to the
-    open board (WorkOrder.status back to "open" with no vendor_id) -- since
-    that history isn't stored on the order itself, cancellation rate here
-    counts orders with status "cancelled" that this vendor had accepted
-    before a resident/admin cancelled them, which is the data actually
-    available on the WorkOrder row.
+    Important safeguards:
+      - A vendor with no jobs scores 0, never 100.
+      - A vendor with active jobs but no completed jobs has 0% completion and
+        0% on-time completion; active work cannot be counted as completed.
+      - On-time completion is 0 when there are no completed jobs, rather than
+        assuming a perfect rate.
+      - Cancellation is measured against all jobs assigned to the vendor.
     """
     completed = [o for o in orders if o.status == "completed"]
     cancelled = [o for o in orders if o.status == "cancelled"]
     active = [o for o in orders if o.status in {"accepted", "in_progress"}]
     total = len(orders)
 
-    denom = len(completed) + len(cancelled)
-    completion_rate = (len(completed) / denom) if denom else 1.0
+    if total == 0:
+        return {
+            "score": 0.0,
+            "total_jobs": 0,
+            "completed_jobs": 0,
+            "cancelled_jobs": 0,
+            "active_jobs": 0,
+            "completion_rate": 0.0,
+            "on_time_completion_rate": None,
+            "average_completion_hours": None,
+        }
+
+    completion_rate = len(completed) / total
 
     on_time = 0
     timed = 0
@@ -532,9 +570,12 @@ def _score_vendor(orders):
         timed += 1
         if o.completed_at.date() <= due:
             on_time += 1
-    on_time_rate = (on_time / timed) if timed else 1.0
 
-    cancellation_rate = (len(cancelled) / total) if total else 0.0
+    # No completed work means there is no evidence of timely completion.
+    # Treat it as zero for the performance score, not 100%.
+    on_time_rate = (on_time / len(completed)) if completed else 0.0
+    timed_on_time_rate = (on_time / timed) if timed else None
+    cancellation_rate = len(cancelled) / total
 
     score = (
         completion_rate * 50
@@ -556,7 +597,7 @@ def _score_vendor(orders):
         "cancelled_jobs": len(cancelled),
         "active_jobs": len(active),
         "completion_rate": round(completion_rate * 100, 1),
-        "on_time_completion_rate": round(on_time_rate * 100, 1) if timed else None,
+        "on_time_completion_rate": round(timed_on_time_rate * 100, 1) if timed_on_time_rate is not None else None,
         "average_completion_hours": avg_hours,
     }
 

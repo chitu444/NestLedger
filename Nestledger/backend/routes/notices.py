@@ -1,4 +1,5 @@
 from flask import Blueprint, request
+from datetime import datetime, timedelta
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy import or_
 from utils.auth import current_user
@@ -43,6 +44,24 @@ def create_notice():
         ok, err = required_text(value, label, max_len=4000 if label == "Body" else 200)
         if not ok:
             return {"error": err}, 400
+
+    # Guard against accidental duplicate submits/retries of the same notice.
+    # The frontend also disables the submit button while the request is pending.
+    recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+    duplicate = (
+        Notice.query
+        .filter(
+            Notice.created_by == user.id,
+            Notice.title == title,
+            Notice.body == body,
+            Notice.tag == tag,
+            Notice.created_at >= recent_cutoff,
+        )
+        .order_by(Notice.id.desc())
+        .first()
+    )
+    if duplicate is not None:
+        return {"notice": duplicate.to_dict(), "duplicate": True}, 200
 
     notice = Notice(title=title, body=body, tag=tag, created_by=user.id)
     db.session.add(notice)

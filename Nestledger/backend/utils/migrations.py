@@ -13,6 +13,8 @@ MIGRATIONS = (
     (1, "add_hardening_columns", "_migration_1_hardening_columns"),
     (2, "add_query_indexes", "_migration_2_query_indexes"),
     (3, "enforce_pending_quote_uniqueness", "_migration_3_quote_integrity"),
+    (4, "enforce_resident_apartment_uniqueness", "_migration_4_apartment_integrity"),
+    (5, "limit_apartment_inventory_to_a_m", "_migration_5_apartment_inventory"),
 )
 
 
@@ -142,3 +144,78 @@ def run_migrations():
             db.session.rollback()
             raise
     return migration_status()
+
+
+
+def _migration_5_apartment_inventory():
+    """Restrict the resident apartment inventory to blocks A through M, units 1 through 7."""
+    allowed = {f"{chr(65+b)}-{u}" for b in range(13) for u in range(1, 8)}
+    rows = db.session.execute(db.text("""
+        SELECT apartment, COUNT(*) AS c FROM "user"
+        WHERE role = 'resident' AND apartment IS NOT NULL
+        GROUP BY apartment
+    """)).mappings().all()
+    outside = [str(r["apartment"]).strip().upper() for r in rows if str(r["apartment"] or "").strip().upper() not in allowed]
+    if outside:
+        raise RuntimeError(
+            "Cannot restrict apartment inventory to A-1 through M-7 because existing resident assignments are outside the new inventory: "
+            + ", ".join(outside)
+        )
+    # PostgreSQL supports ALTER TABLE ... ADD CONSTRAINT inside a DO block.
+    # SQLite does not support DO/PLpgSQL (and cannot add a table CHECK constraint
+    # with ALTER TABLE), so keep the migration portable: the application-level
+    # validator is authoritative on SQLite while PostgreSQL gets a DB constraint.
+    if db.engine.dialect.name == "postgresql":
+        db.session.execute(db.text("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_resident_apartment_inventory_a_m'
+                ) THEN
+                    ALTER TABLE "user" ADD CONSTRAINT ck_resident_apartment_inventory_a_m
+                    CHECK (role <> 'resident' OR apartment IS NULL OR apartment ~ '^[A-M]-[1-7]$');
+                END IF;
+            END $$;
+        """))
+    elif db.engine.dialect.name == "sqlite":
+        # SQLite cannot add a CHECK constraint to an existing table. All resident
+        # creation/update paths validate the same A-1..M-7 inventory before commit,
+        # and the unique partial index from migration 4 still enforces one owner.
+        pass
+    else:
+        # Other SQLAlchemy dialects: do not execute PostgreSQL-specific SQL.
+        pass
+    db.session.commit()
+
+def _migration_4_apartment_integrity():
+    """Normalize valid apartment codes and prevent duplicate resident ownership."""
+    inspector = inspect(db.engine)
+    if "user" not in inspector.get_table_names():
+        return
+    # Existing records outside the new A-1..Z-7 inventory are preserved.
+    # If duplicate valid assignments already exist, do not destructively rewrite them;
+    # deployment verification should surface the conflict for an administrator.
+    rows = db.session.execute(text("""
+        SELECT apartment, COUNT(*) AS c FROM "user"
+        WHERE role = 'resident' AND apartment IS NOT NULL
+        GROUP BY apartment HAVING COUNT(*) > 1
+    """)).mappings().all()
+    if rows:
+        # The uniqueness index cannot be created while legacy data contains duplicate
+        # apartment assignments. Do not delete residents or guess a new apartment for
+        # them. Keep the first resident deterministically and clear the duplicate
+        # assignments so those residents can be assigned an available apartment again.
+        for row in rows:
+            apartment = str(row["apartment"] or "").strip().upper()
+            duplicate_ids = db.session.execute(text("""
+                SELECT id FROM "user"
+                WHERE role = 'resident' AND apartment = :apartment
+                ORDER BY id
+            """), {"apartment": apartment}).scalars().all()
+            for duplicate_id in duplicate_ids[1:]:
+                db.session.execute(text("""
+                    UPDATE "user" SET apartment = NULL WHERE id = :user_id
+                """), {"user_id": duplicate_id})
+    db.session.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_user_resident_apartment
+        ON "user" (apartment) WHERE role = 'resident' AND apartment IS NOT NULL
+    """))

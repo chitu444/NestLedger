@@ -19,6 +19,17 @@ VALID_ROLES = {"resident", "vendor", "admin"}
 PUBLIC_ROLES = {"resident"}
 
 VENDOR_JOB_TITLES = {"plumber", "electrician", "carpenter", "painter", "cleaner"}
+APARTMENT_CODES = tuple(f"{chr(65 + block)}-{unit}" for block in range(13) for unit in range(1, 8))
+APARTMENT_CODE_SET = set(APARTMENT_CODES)
+
+def valid_apartment(value: str, *, required: bool = True):
+    value = str(value or "").strip().upper()
+    if not value:
+        return (False, "Apartment / Flat is required") if required else (True, None)
+    if value not in APARTMENT_CODE_SET:
+        return False, "Select a valid apartment from A-1 through M-7"
+    return True, None
+
 REQUEST_CATEGORY_TO_JOB = {
     "plumbing": "plumber",
     "electrical": "electrician",
