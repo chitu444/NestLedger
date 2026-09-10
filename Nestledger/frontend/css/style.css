@@ -1328,3 +1328,140 @@ html[data-theme="dark"] .quote-best{background:#40364b;color:#d8ccef}
 html[data-theme="dark"] .chatbot-fab{background:#d9e1d6!important;color:#24372d!important;border-color:#526052!important}
 html[data-theme="dark"] .chatbot-fab:hover{background:#edf1ea!important}
 @media(max-width:520px){.chatbot-fab{right:14px!important;bottom:18px!important;width:54px!important;height:54px!important}.chatbot-panel{bottom:82px!important}}
+
+/* Typography + spatial balance pass (NestLedger)
+   Target: readable 16px interaction text, 14px secondary text,
+   28–40px mobile titles, 35–50px desktop titles.
+   Keep dense controls compact while giving important copy enough room. */
+:root{
+  --nl-body-size:16px;
+  --nl-body-line:1.55;
+  --nl-secondary-size:14px;
+  --nl-caption-size:12px;
+  --nl-title-desktop:42px;
+  --nl-title-mobile:32px;
+}
+body{font-size:var(--nl-body-size);line-height:var(--nl-body-line)}
+
+/* Main hierarchy */
+.topbar h1,.page-title h2{font-size:var(--nl-title-desktop)!important;line-height:1.08}
+.topbar p,.page-title p{font-size:var(--nl-secondary-size);line-height:1.55}
+.hero h2{font-size:38px!important;line-height:1.08}
+.hero p{font-size:var(--nl-secondary-size);line-height:1.55}
+.panel h3,.panel-head h3{font-size:20px!important;line-height:1.2}
+
+/* Body / supporting copy: captions are deliberately only 2px below body. */
+.muted,.list-row p,.notice p,.activity small,.small-note,.sub,.empty,
+.notice-strip p,.quote-vendor p,.quote-note p,.profile-chip small,
+.finance-lines span,.status-bars>div,.bi-insight,.bi-bar-row,
+.activity-item p,.activity-item time{font-size:var(--nl-secondary-size)!important;line-height:1.5}
+
+/* Labels and micro-copy remain compact, but are no longer tiny. */
+.field label,.section-label,.notice .tag,.quote-kicker,.quote-main>span,.quote-note>span,
+.stat small,.finance-stat small,.bi-toolbar small,.bi-live,.bi-kpi span,.bi-kpi small,
+.admin-hero-metric span,.admin-hero-center span,.vendor-hero-main .eyebrow,
+.vendor-hero-side small,.resident-hero-metric small{font-size:var(--nl-caption-size)!important;line-height:1.35}
+
+/* Interactive text: readable without turning the dashboard into a poster. */
+button,input,select,textarea,.nav button,.logout,.role-btn,.primary,.secondary,
+.pay,.btn-row button,.text-button,.shortcut,.list-controls select,.list-search input{font-size:16px}
+.nav button{line-height:1.3}
+.field input,.field select,.field textarea{font-size:16px;line-height:1.45;min-height:46px}
+.primary,.secondary,.pay{min-height:44px}
+
+/* Tables and dense lists: 14px is the compact interaction baseline. */
+.table th,.table td{font-size:14px!important;line-height:1.4;padding:11px 8px}
+.table th{font-size:12px!important;line-height:1.3}
+.badge{font-size:12px!important;padding:5px 9px;line-height:1.25}
+.list-row h4{font-size:16px!important;line-height:1.3}
+.amount{font-size:20px!important}
+.activity b{font-size:16px}
+.activity strong{font-size:14px}
+
+/* Keep stats visually strong, but stop oversized metric cards from dominating. */
+.stat{padding:16px 18px}
+.stat small{letter-spacing:.8px}
+.stat b{font-size:26px}
+.stat em{font-size:14px}
+.finance-stat{padding:16px 18px}
+.finance-stat b{font-size:24px}
+
+/* Compact large containers that previously created excessive empty space. */
+.hero{padding:22px 26px;border-radius:22px}
+.panel{padding:18px}
+.list-card{padding:14px 16px;margin-bottom:9px}
+.notice{padding:15px 17px;margin-bottom:10px}
+.form-card{padding:20px}
+.profile-box{padding:17px 19px}
+.modal{padding:22px}
+.empty{padding:30px 22px}
+
+/* Admin control-room symmetry: same visual weight left/right and less vertical waste. */
+.admin-hero{min-height:128px!important;padding:20px 34px!important;gap:26px}
+.admin-hero-metric b{font-size:32px}
+.admin-hero-center strong{font-size:18px}
+.admin-stats .stat{min-height:96px;padding:14px 16px}
+.admin-overview-grid,.admin-lower-grid{gap:14px;margin-bottom:14px}
+.compact-panel{padding:16px!important}
+.shortcut{min-height:48px;padding:8px 10px;font-size:14px}
+.text-button{font-size:14px}
+.inline-error{font-size:14px}
+
+/* BI remains dense, but readable. */
+.bi-kpi{padding:16px}
+.bi-kpi b{font-size:28px}
+.bi-bar-row{font-size:14px}
+.bi-vendor small{font-size:12px}
+.bi-vendor strong{font-size:17px}
+
+/* Quotation modal hierarchy. */
+.quotes-header h3{font-size:30px!important}
+.quotes-header p{font-size:14px}
+.quotes-summary span{font-size:12px}
+.quotes-summary b{font-size:19px}
+.quote-vendor h4{font-size:18px}
+.quote-main strong{font-size:clamp(34px,5vw,48px)}
+.quote-best{font-size:12px}
+
+/* Auth screens use the same title scale. */
+.auth-card h2{font-size:34px}
+.art-copy h1{font-size:48px}
+.art-copy p{font-size:16px}
+.art-copy .eyebrow{font-size:12px}
+
+@media(max-width:900px){
+  .topbar h1,.page-title h2{font-size:34px!important}
+  .hero h2{font-size:32px!important}
+  .main{padding:18px 18px 40px}
+  .table th,.table td{font-size:14px!important}
+  .admin-hero{min-height:0!important;padding:20px!important}
+}
+
+@media(max-width:560px){
+  :root{--nl-body-size:16px;--nl-secondary-size:14px;--nl-title-mobile:30px}
+  .topbar h1,.page-title h2{font-size:var(--nl-title-mobile)!important;line-height:1.1}
+  .topbar p,.page-title p{font-size:14px}
+  .hero{padding:19px 18px}
+  .hero h2{font-size:28px!important}
+  .hero p{font-size:14px}
+  .panel{padding:15px}
+  .panel h3,.panel-head h3{font-size:19px!important}
+  .stat{padding:13px 14px}
+  .stat b{font-size:23px}
+  .stat em{font-size:14px}
+  .list-card{padding:13px 14px}
+  .list-row h4{font-size:16px!important}
+  .list-row p{font-size:14px!important}
+  .table th,.table td{font-size:14px!important;padding:10px 7px}
+  .table th{font-size:12px!important}
+  .badge{font-size:12px!important}
+  .btn-row button,.shortcut,.text-button{font-size:14px}
+  .field label{font-size:12px!important}
+  .field input,.field select,.field textarea{font-size:16px}
+  .auth-card h2{font-size:31px}
+  .art-copy h1{font-size:40px}
+  .quotes-header h3{font-size:26px!important}
+  .quotes-header p{font-size:14px}
+  .quotes-summary b{font-size:17px}
+  .admin-hero-metric b{font-size:30px}
+}
