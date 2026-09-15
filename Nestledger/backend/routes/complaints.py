@@ -11,6 +11,7 @@ from models.notification import notify
 from models.user import User
 from utils.validators import required_text, valid_status
 from utils.audit import record
+from utils.concurrency import lock_fingerprint
 from utils.pagination import paginate_query
 
 
@@ -73,9 +74,12 @@ def create_complaint():
     if not ok:
         return {"error": err}, 400
 
-    # Prevent accidental double-submission of the same complaint. This is a
-    # server-side safeguard in addition to the frontend submit lock.
+    # Prevent accidental double-submission of the same complaint. The short
+    # window is paired with a PostgreSQL transaction lock so two simultaneous
+    # requests cannot both pass the duplicate check.
     recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+    fingerprint = f"complaint:{user.id}:{category}:{subject}:{description}"
+    lock_fingerprint(fingerprint)
     duplicate = (
         Complaint.query
         .filter(

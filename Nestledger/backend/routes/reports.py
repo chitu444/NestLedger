@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 import logging
+import math
 
 from flask import Blueprint
 from flask_jwt_extended import verify_jwt_in_request
@@ -18,6 +19,15 @@ from models.work_order import WorkOrder
 
 reports_bp = Blueprint("reports", __name__)
 log = logging.getLogger(__name__)
+
+
+def _number(value, default=0.0):
+    """Convert DB numeric values safely for JSON; never let bad legacy data break BI."""
+    try:
+        value = float(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return value if math.isfinite(value) else default
 
 
 def month_key(dt):
@@ -76,12 +86,12 @@ def reports():
         return {"ok": False, "error": {"code": "ADMIN_REQUIRED", "message": "Admin access required."}}, 403
 
     try:
-        collection = float(db.session.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
+        collection = _number(db.session.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
             Payment.status == "paid", Payment.bill_id.isnot(None)
-        ).scalar() or 0)
-        expense_total = float(db.session.query(func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0)
-        billed = float(db.session.query(func.coalesce(func.sum(MaintenanceBill.amount), 0)).scalar() or 0)
-        pending = max(billed - collection, 0)
+        ).scalar())
+        expense_total = _number(db.session.query(func.coalesce(func.sum(Expense.amount), 0)).scalar())
+        billed = _number(db.session.query(func.coalesce(func.sum(MaintenanceBill.amount), 0)).scalar())
+        pending = max(billed - collection, 0.0)
 
         now, months, start = six_month_window()
         payment_rows = Payment.query.filter(
@@ -94,11 +104,11 @@ def reports():
         collected_by_month, expense_by_month, category_totals = defaultdict(float), defaultdict(float), defaultdict(float)
         for created_at, amount in payment_rows:
             if created_at:
-                collected_by_month[month_key(created_at)] += float(amount or 0)
+                collected_by_month[month_key(created_at)] += _number(amount)
         for created_at, amount, category in expense_rows:
             if created_at:
-                expense_by_month[month_key(created_at)] += float(amount or 0)
-            category_totals[str(category or "Other")] += float(amount or 0)
+                expense_by_month[month_key(created_at)] += _number(amount)
+            category_totals[str(category or "Other").strip() or "Other"] += _number(amount)
 
         monthly = [{
             "label": month_label(y, m),
@@ -116,13 +126,22 @@ def reports():
         open_complaints = sum(v for k, v in complaint_counts.items() if k != "closed")
         open_work_orders = WorkOrder.query.filter(WorkOrder.status.notin_(("completed", "cancelled"))).count()
 
-        rating_rows = dict(db.session.query(Rating.vendor_id, func.avg(Rating.stars), func.count(Rating.id)).group_by(Rating.vendor_id).all())
+        # A BI crash was caused here by passing 3-column SQLAlchemy rows to
+        # dict().  dict() only accepts 2-item sequences, so Python raised
+        # ValueError: "dictionary update sequence element #0 has length 3".
+        # Build the vendor aggregate mapping explicitly instead.
+        rating_rows = {
+            vendor_id: (avg, count)
+            for vendor_id, avg, count in db.session.query(
+                Rating.vendor_id, func.avg(Rating.stars), func.count(Rating.id)
+            ).group_by(Rating.vendor_id).all()
+        }
         job_rows = dict(db.session.query(WorkOrder.vendor_id, func.count(WorkOrder.id)).filter(WorkOrder.vendor_id.isnot(None)).group_by(WorkOrder.vendor_id).all())
         vendor_rows = []
         for vendor in Vendor.query.filter_by(status="active").order_by(Vendor.name).all():
             avg, _count = rating_rows.get(vendor.id, (None, 0))
             vendor_rows.append({"name": vendor.name, "service": vendor.service or "General Services",
-                                "rating": round(float(avg), 1) if avg is not None else None,
+                                "rating": round(_number(avg), 1) if avg is not None else None,
                                 "jobs": int(job_rows.get(vendor.id, 0))})
         vendor_rows.sort(key=lambda x: (x["rating"] is not None, x["rating"] or 0, x["jobs"]), reverse=True)
 
@@ -141,6 +160,12 @@ def reports():
         db.session.rollback()
         log.exception("BI report database query failed")
         return {"ok": False, "error": {"code": "REPORT_DATABASE_ERROR", "message": "Business Intelligence data is temporarily unavailable."}}, 503
+    except (TypeError, ValueError, OverflowError) as exc:
+        db.session.rollback()
+        # Data-shape problems must stay inside BI and must never become the
+        # misleading global "invalid value" 400 response.
+        log.exception("BI data conversion failed")
+        return {"ok": False, "error": {"code": "REPORT_DATA_ERROR", "message": "Business Intelligence found invalid legacy data and could not complete this report."}}, 503
     except Exception:
         db.session.rollback()
         log.exception("Unexpected BI report failure")

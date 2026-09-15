@@ -283,7 +283,7 @@ def database_error(error):
 
 @app.errorhandler(ValueError)
 def value_error(error):
-    if request.path == "/api/reports":
+    if request.path.rstrip("/") == "/api/reports":
         db.session.rollback()
         current_app.logger.exception("ValueError while serving Business Intelligence")
         return _api_error("REPORT_INVALID_VALUE", "Business Intelligence could not process the current data. Please refresh and try again." , 503, request_id=getattr(g, "request_id", None))
