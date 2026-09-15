@@ -19,3 +19,5 @@ For a production deployment, keep the application release and migration code in 
 
 The current codebase also uses row locks for work-order acceptance/quote acceptance and reconciles Razorpay payment capture/amount/currency before changing local payment state. These changes do not require a new schema migration.
 
+
+- **6 — financial precision hardening:** converts PostgreSQL financial amount columns to `NUMERIC(12,2)` after validating existing data; SQLite relies on model affinity and application validation.
