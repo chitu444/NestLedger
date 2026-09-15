@@ -202,7 +202,7 @@ def list_payments():
 @jwt_required()
 def create_order():
     uid = current_user_id(); data = request.get_json(silent=True) or {}
-    bill = MaintenanceBill.query.filter_by(id=data.get("bill_id"), user_id=uid).with_for_update().first()
+    bill = MaintenanceBill.query.filter_by(id=data.get("bill_id"), user_id=uid).with_for_update(of=MaintenanceBill).first()
     if bill is None: return {"error": "Bill not found"}, 404
     if bill.status == "paid": return {"error": "Bill is already paid"}, 400
     pending = Payment.query.filter_by(bill_id=bill.id, user_id=uid, status="created").order_by(Payment.id.desc()).first()
@@ -227,7 +227,7 @@ def create_order():
 @jwt_required()
 def create_work_order_payment():
     uid = current_user_id(); data = request.get_json(silent=True) or {}
-    order = WorkOrder.query.filter_by(id=data.get("work_order_id"), resident_id=uid).with_for_update().first()
+    order = WorkOrder.query.filter_by(id=data.get("work_order_id"), resident_id=uid).with_for_update(of=WorkOrder).first()
     if order is None: return {"error": "Work order not found"}, 404
     if order.vendor_id is None: return {"error": "A vendor must accept the request before payment"}, 400
     if order.status not in {"accepted", "in_progress", "completed"}: return {"error": "This work order is not ready for payment"}, 400
@@ -266,7 +266,7 @@ def verify():
     if not all((order_id, payment_id, signature)):
         return {"error": "Incomplete payment verification data"}, 400
 
-    payment = Payment.query.filter_by(user_id=uid, razorpay_order_id=order_id).with_for_update().first()
+    payment = Payment.query.filter_by(user_id=uid, razorpay_order_id=order_id).with_for_update(of=Payment).first()
     if payment is None:
         return {"error": "Payment order not found"}, 404
     if payment.status == "paid":
