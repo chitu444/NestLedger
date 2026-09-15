@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user
+from utils.idempotency import idempotent
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.exc import IntegrityError
 
@@ -123,6 +124,7 @@ def list_orders():
 
 @workorders_bp.post("/work-orders")
 @jwt_required()
+@idempotent
 def create_order():
     user = current_user()
     if user is None:
@@ -262,6 +264,7 @@ def create_order():
 
 @workorders_bp.patch("/work-orders/<int:wid>/accept")
 @jwt_required()
+@idempotent
 def accept_order(wid):
     user = current_user()
     if user is None or user.role != "vendor":
@@ -300,6 +303,7 @@ def accept_order(wid):
 
 @workorders_bp.patch("/work-orders/<int:wid>/withdraw")
 @jwt_required()
+@idempotent
 def withdraw_order(wid):
     """A vendor withdraws from a job they previously accepted.
 
@@ -353,6 +357,7 @@ def withdraw_order(wid):
 
 @workorders_bp.patch("/work-orders/<int:wid>/status")
 @jwt_required()
+@idempotent
 def update_status(wid):
     user = current_user()
     order = WorkOrder.query.filter_by(id=wid).with_for_update(of=WorkOrder).first()
@@ -420,6 +425,7 @@ def update_status(wid):
 
 @workorders_bp.post("/work-orders/<int:wid>/quotes")
 @jwt_required()
+@idempotent
 def submit_quote(wid):
     """Vendor submits or updates a quote on an open work order.
 
@@ -475,7 +481,7 @@ def submit_quote(wid):
 
     try:
         db.session.commit()
-    except Exception:
+    except IntegrityError:
         # The database-level partial unique index is the final guard against
         # concurrent duplicate pending quotes. If another request won the
         # race, return/update that quote instead of surfacing a 500.
@@ -539,6 +545,7 @@ def list_quotes(wid):
 
 @workorders_bp.patch("/work-orders/<int:wid>/quotes/<int:qid>/accept")
 @jwt_required()
+@idempotent
 def accept_quote(wid, qid):
     lock_fingerprint(f"quote-action:{wid}:{qid}:accept")
     """Resident/admin accepts one quote.
@@ -615,6 +622,7 @@ def accept_quote(wid, qid):
 
 @workorders_bp.patch("/work-orders/<int:wid>/quotes/<int:qid>/reject")
 @jwt_required()
+@idempotent
 def reject_quote(wid, qid):
     lock_fingerprint(f"quote-action:{wid}:{qid}:reject")
     """Resident/admin declines a single quote without accepting another."""
@@ -654,6 +662,7 @@ def reject_quote(wid, qid):
 
 @workorders_bp.patch("/work-orders/<int:wid>/quotes/<int:qid>/withdraw")
 @jwt_required()
+@idempotent
 def withdraw_quote(wid, qid):
     lock_fingerprint(f"quote-action:{wid}:{qid}:withdraw")
     """A vendor withdraws their own pending quote."""
@@ -688,6 +697,7 @@ def withdraw_quote(wid, qid):
 
 @workorders_bp.post("/work-orders/<int:wid>/rating")
 @jwt_required()
+@idempotent
 def rate_order(wid):
     """Resident rates the vendor + leaves remarks on a completed job.
 

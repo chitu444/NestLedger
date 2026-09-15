@@ -127,23 +127,24 @@ def reports():
         open_complaints = sum(v for k, v in complaint_counts.items() if k != "closed")
         open_work_orders = WorkOrder.query.filter(WorkOrder.status.notin_(("completed", "cancelled"))).count()
 
-        # A BI crash was caused here by passing 3-column SQLAlchemy rows to
-        # dict().  dict() only accepts 2-item sequences, so Python raised
-        # ValueError: "dictionary update sequence element #0 has length 3".
-        # Build the vendor aggregate mapping explicitly instead.
-        rating_rows = {
-            vendor_id: (avg, count)
-            for vendor_id, avg, count in db.session.query(
-                Rating.vendor_id, func.avg(Rating.stars), func.count(Rating.id)
-            ).group_by(Rating.vendor_id).all()
-        }
-        job_rows = dict(db.session.query(WorkOrder.vendor_id, func.count(WorkOrder.id)).filter(WorkOrder.vendor_id.isnot(None)).group_by(WorkOrder.vendor_id).all())
+        # One grouped SQL query replaces three application-side vendor scans.
+        # COUNT(DISTINCT ...) prevents join multiplication from inflating either
+        # ratings or work-order totals.
         vendor_rows = []
-        for vendor in Vendor.query.filter_by(status="active").order_by(Vendor.name).all():
-            avg, _count = rating_rows.get(vendor.id, (None, 0))
-            vendor_rows.append({"name": vendor.name, "service": vendor.service or "General Services",
+        vendor_aggregate = (db.session.query(
+            Vendor.id, Vendor.name, Vendor.service,
+            func.avg(Rating.stars),
+            func.count(func.distinct(Rating.id)),
+            func.count(func.distinct(WorkOrder.id)),
+        ).outerjoin(Rating, Rating.vendor_id == Vendor.id)
+         .outerjoin(WorkOrder, WorkOrder.vendor_id == Vendor.id)
+         .filter(Vendor.status == "active")
+         .group_by(Vendor.id, Vendor.name, Vendor.service)
+         .order_by(Vendor.name).all())
+        for vendor_id, name, service, avg, rating_count, job_count in vendor_aggregate:
+            vendor_rows.append({"name": name, "service": service or "General Services",
                                 "rating": round(_number(avg), 1) if avg is not None else None,
-                                "jobs": int(job_rows.get(vendor.id, 0))})
+                                "jobs": int(job_count or 0)})
         vendor_rows.sort(key=lambda x: (x["rating"] is not None, x["rating"] or 0, x["jobs"]), reverse=True)
 
         rate = round(collection / billed * 100, 1) if billed else 0

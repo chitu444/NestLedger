@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
 from models.db import db
 from utils.validators import money_value
@@ -39,7 +40,7 @@ class WorkOrder(db.Model):
             .filter(Quotation.status == "pending", Quotation.work_order_id.in_(ids))
             .group_by(Quotation.work_order_id).all()
         )
-        ratings = {r.work_order_id: r for r in Rating.query.filter(Rating.work_order_id.in_(ids)).all()}
+        ratings = {r.work_order_id: r for r in Rating.query.options(selectinload(Rating.resident)).filter(Rating.work_order_id.in_(ids)).all()}
         paid_ids = dict(
             db.session.query(Payment.work_order_id, func.min(Payment.id))
             .filter(Payment.status == "paid", Payment.work_order_id.in_(ids))

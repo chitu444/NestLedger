@@ -4,6 +4,7 @@ from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy import or_
 from utils.auth import current_user
+from utils.idempotency import idempotent
 
 from models.complaint import Complaint
 from models.db import db
@@ -53,6 +54,7 @@ def list_complaints():
 
 @complaints_bp.post("/complaints")
 @jwt_required()
+@idempotent
 def create_complaint():
     user = current_user()
     if user is None:
@@ -109,6 +111,7 @@ def create_complaint():
 
 @complaints_bp.patch("/complaints/<int:cid>")
 @jwt_required()
+@idempotent
 def update_complaint(cid):
     user = current_user()
     complaint = db.session.get(Complaint, cid)

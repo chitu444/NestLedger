@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy import or_
 from utils.auth import current_user
+from utils.idempotency import idempotent
 
 from models.db import db
 from models.notice import Notice
@@ -31,6 +32,7 @@ def list_notices():
 
 @notices_bp.post("/notices")
 @jwt_required()
+@idempotent
 def create_notice():
     user = current_user()
     if user is None or user.role != "admin":
@@ -82,6 +84,7 @@ def create_notice():
 
 @notices_bp.delete("/notices/<int:nid>")
 @jwt_required()
+@idempotent
 def delete_notice(nid):
     user = current_user()
     if user is None or user.role != "admin":

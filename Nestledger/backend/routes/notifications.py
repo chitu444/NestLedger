@@ -1,6 +1,7 @@
 from flask import Blueprint
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user
+from utils.idempotency import idempotent
 
 from models.db import db
 from models.notification import Notification
@@ -27,6 +28,7 @@ def list_notifications():
 
 @notifications_bp.patch("/notifications/<int:nid>/read")
 @jwt_required()
+@idempotent
 def mark_read(nid):
     user = current_user()
     if user is None:
@@ -43,6 +45,7 @@ def mark_read(nid):
 
 @notifications_bp.patch("/notifications/read-all")
 @jwt_required()
+@idempotent
 def mark_all_read():
     user = current_user()
     if user is None:

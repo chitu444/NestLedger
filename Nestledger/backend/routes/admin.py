@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 import secrets
 
 from flask import Blueprint, request, Response, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user
+from utils.idempotency import idempotent
 
 from models.db import db
 from models.audit_log import AuditLog
@@ -19,6 +21,7 @@ from models.work_order import WorkOrder
 from utils.validators import required_text, valid_amount, valid_email, valid_password, valid_phone, VENDOR_JOB_TITLES, REQUEST_CATEGORY_TO_JOB
 from utils.pagination import paginate_query
 from utils.concurrency import lock_fingerprint
+from utils.apartments import claim_apartment
 from sqlalchemy import or_
 import csv
 import io
@@ -200,6 +203,7 @@ def users():
 
 @admin_bp.post("/admin/expenses")
 @jwt_required()
+@idempotent
 def add_expense():
     if require_admin() is None:
         return {"error": "Admin access required"}, 403
@@ -264,6 +268,7 @@ def expenses():
 
 @admin_bp.post("/admin/residents")
 @jwt_required()
+@idempotent
 def add_resident():
     if require_admin() is None:
         return {"error": "Admin access required"}, 403
@@ -304,6 +309,11 @@ def add_resident():
     user.set_password(temporary_password)
     db.session.add(user)
     try:
+        db.session.flush()
+        claimed, claim_error = claim_apartment(apartment, user.id)
+        if not claimed:
+            db.session.rollback()
+            return {"error": claim_error}, 409
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
@@ -318,6 +328,7 @@ def add_resident():
 
 @admin_bp.post("/admin/vendors")
 @jwt_required()
+@idempotent
 def add_vendor():
     if require_admin() is None:
         return {"error": "Admin access required"}, 403
@@ -398,10 +409,10 @@ def resident_detail(resident_id):
 
     return {
         "resident": resident.to_dict(),
-        "bills": [b.to_dict() for b in MaintenanceBill.query.filter_by(user_id=resident.id).order_by(MaintenanceBill.id.desc()).all()],
-        "payments": [p.to_dict() for p in Payment.query.filter_by(user_id=resident.id).order_by(Payment.id.desc()).all()],
-        "complaints": [c.to_dict() for c in resident.complaints],
-        "work_orders": [w.to_dict() for w in WorkOrder.query.filter_by(resident_id=resident.id).order_by(WorkOrder.id.desc()).all()],
+        "bills": [b.to_dict() for b in MaintenanceBill.query.filter_by(user_id=resident.id).order_by(MaintenanceBill.id.desc()).limit(100).all()],
+        "payments": [p.to_dict() for p in Payment.query.filter_by(user_id=resident.id).order_by(Payment.id.desc()).limit(100).all()],
+        "complaints": [c.to_dict() for c in Complaint.query.filter_by(user_id=resident.id).order_by(Complaint.id.desc()).limit(100).all()],
+        "work_orders": [w.to_dict() for w in WorkOrder.query.filter_by(resident_id=resident.id).order_by(WorkOrder.id.desc()).limit(100).all()],
     }
 
 
@@ -463,6 +474,7 @@ def maintenance_bills():
 
 @admin_bp.post("/admin/maintenance-bills")
 @jwt_required()
+@idempotent
 def create_maintenance_bill():
     admin = require_admin()
     if admin is None:
@@ -491,7 +503,7 @@ def create_maintenance_bill():
             return {"error": err}, 400
 
     lock_fingerprint(f"maintenance-bill:{resident.id}:{month}")
-    existing = MaintenanceBill.query.filter_by(user_id=resident.id, month=month).first()
+    existing = MaintenanceBill.query.filter(MaintenanceBill.user_id == resident.id, db.func.lower(db.func.trim(MaintenanceBill.month)) == month.strip().lower()).first()
     if existing:
         return {"error": f"A maintenance bill for {month} already exists for this resident"}, 409
 
@@ -628,16 +640,47 @@ def vendor_performance():
         return {"error": "Admin access required"}, 403
 
     vendors = Vendor.query.order_by(Vendor.name).all()
-    orders_by_vendor = {}
     vendor_ids = [v.id for v in vendors]
+    orders_by_vendor = {vid: [] for vid in vendor_ids}
     if vendor_ids:
-        for order in WorkOrder.query.filter(WorkOrder.vendor_id.in_(vendor_ids)).all():
-            orders_by_vendor.setdefault(order.vendor_id, []).append(order)
+        rows = db.session.query(
+            WorkOrder.vendor_id, WorkOrder.status, WorkOrder.created_at, WorkOrder.accepted_at, WorkOrder.completed_at, WorkOrder.due_date
+        ).filter(WorkOrder.vendor_id.in_(vendor_ids)).all()
+        for vendor_id, status, created_at, accepted_at, completed_at, due_date in rows:
+            orders_by_vendor.setdefault(vendor_id, []).append((status, created_at, accepted_at, completed_at, due_date))
 
     results = []
     for vendor in vendors:
-        metrics = _score_vendor(orders_by_vendor.get(vendor.id, []))
-        results.append({"vendor": vendor.to_dict(), **metrics})
-
+        items = orders_by_vendor.get(vendor.id, [])
+        total = len(items)
+        completed = [x for x in items if x[0] == "completed"]
+        cancelled = [x for x in items if x[0] == "cancelled"]
+        active = [x for x in items if x[0] in {"accepted", "in_progress"}]
+        durations = [
+            (done - accepted).total_seconds() / 3600
+            for _status, _created, accepted, done, _due in completed
+            if accepted and done
+        ]
+        avg_hours = round(sum(durations) / len(durations), 1) if durations else None
+        completion_rate = (len(completed) / total) if total else 0
+        timed = []
+        for _status, _created, _accepted, done, due in completed:
+            due_date = _parse_loose_date(due)
+            if due_date and done:
+                timed.append(1 if done.date() <= due_date else 0)
+        on_time_rate = (sum(timed) / len(timed)) if timed else 0
+        cancellation_rate = (len(cancelled) / total) if total else 0
+        score = completion_rate * 50 + on_time_rate * 30 + (1 - cancellation_rate) * 20
+        results.append({
+            "vendor": vendor.to_dict(),
+            "score": round(score, 1),
+            "total_jobs": total,
+            "completed_jobs": len(completed),
+            "cancelled_jobs": len(cancelled),
+            "active_jobs": len(active),
+            "completion_rate": round(completion_rate * 100, 1),
+            "on_time_completion_rate": round(on_time_rate * 100, 1) if timed else None,
+            "average_completion_hours": avg_hours,
+        })
     results.sort(key=lambda r: r["score"], reverse=True)
     return {"vendor_performance": results}

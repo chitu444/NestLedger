@@ -10,3 +10,6 @@ from models.notification import Notification
 from models.quotation import Quotation
 from models.rating import Rating
 from models.audit_log import AuditLog
+from models.idempotency import IdempotencyRecord
+from models.apartment_slot import ApartmentSlot
+from models.auth_rate_limit import AuthRateLimit

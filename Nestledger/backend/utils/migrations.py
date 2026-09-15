@@ -16,6 +16,11 @@ MIGRATIONS = (
     (4, "enforce_resident_apartment_uniqueness", "_migration_4_apartment_integrity"),
     (5, "limit_apartment_inventory_to_a_m", "_migration_5_apartment_inventory"),
     (6, "harden_financial_amount_precision", "_migration_6_financial_precision"),
+    (7, "harden_apartment_claims", "_migration_7_apartment_claims"),
+    (8, "add_idempotency_records", "_migration_8_idempotency_records"),
+    (9, "enforce_financial_logical_uniqueness", "_migration_9_logical_uniqueness"),
+    (10, "enforce_data_domain_constraints", "_migration_10_domain_constraints"),
+    (11, "add_auth_rate_limit", "_migration_11_auth_rate_limit"),
 )
 
 
@@ -98,9 +103,104 @@ def _migration_3_quote_integrity():
         "ON quotation (work_order_id, vendor_id) WHERE status = 'pending'"
     ))
 
+def _migration_7_apartment_claims():
+    """Create the canonical 91-unit inventory and atomically backfill claims."""
+    from utils.validators import APARTMENT_CODES
+    tables = set(inspect(db.engine).get_table_names())
+    if "user" not in tables:
+        return
+    db.session.execute(text("CREATE TABLE IF NOT EXISTS apartment_slot (code VARCHAR(10) PRIMARY KEY, claimed_by_user_id INTEGER UNIQUE REFERENCES \"user\"(id) ON DELETE SET NULL)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_apartment_slot_claimed_by_user_id ON apartment_slot (claimed_by_user_id)"))
+    for code in APARTMENT_CODES:
+        if db.engine.dialect.name == "postgresql":
+            db.session.execute(text("INSERT INTO apartment_slot (code) VALUES (:code) ON CONFLICT (code) DO NOTHING"), {"code": code})
+        else:
+            db.session.execute(text("INSERT OR IGNORE INTO apartment_slot (code) VALUES (:code)"), {"code": code})
+
+    duplicates = db.session.execute(text("SELECT apartment, COUNT(*) AS n FROM \"user\" WHERE role = 'resident' AND apartment IS NOT NULL GROUP BY apartment HAVING COUNT(*) > 1")).all()
+    if duplicates:
+        raise RuntimeError("Cannot create apartment claims: duplicate resident apartment assignments exist")
+    allowed_sql = ",".join("'" + c + "'" for c in APARTMENT_CODES)
+    invalid = db.session.execute(text("SELECT apartment FROM \"user\" WHERE role = 'resident' AND apartment IS NOT NULL AND apartment NOT IN (" + allowed_sql + ") LIMIT 1")).first()
+    if invalid:
+        raise RuntimeError(f"Cannot create apartment claims: invalid apartment {invalid[0]}")
+    if db.engine.dialect.name == "postgresql":
+        db.session.execute(text("UPDATE apartment_slot AS s SET claimed_by_user_id = u.id FROM \"user\" AS u WHERE u.role = 'resident' AND u.apartment = s.code AND (s.claimed_by_user_id IS NULL OR s.claimed_by_user_id = u.id)"))
+    else:
+        db.session.execute(text("UPDATE apartment_slot SET claimed_by_user_id = (SELECT id FROM \"user\" WHERE role = 'resident' AND apartment = apartment_slot.code) WHERE code IN (SELECT apartment FROM \"user\" WHERE role = 'resident')"))
+
+
+def _migration_8_idempotency_records():
+    db.session.execute(text("CREATE TABLE IF NOT EXISTS idempotency_record (id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES \"user\"(id), scope VARCHAR(220) NOT NULL, key VARCHAR(200) NOT NULL, request_hash VARCHAR(64) NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'processing', response_status INTEGER, response_body TEXT, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT uq_idempotency_scope_key UNIQUE (scope, key))"))
+    cols = {c["name"] for c in inspect(db.session.connection()).get_columns("idempotency_record")}
+    if "scope" not in cols:
+        db.session.execute(text("ALTER TABLE idempotency_record ADD COLUMN scope VARCHAR(220)"))
+        if db.engine.dialect.name == "postgresql":
+            db.session.execute(text("UPDATE idempotency_record SET scope = 'user:' || COALESCE(CAST(user_id AS VARCHAR), 'anonymous') WHERE scope IS NULL"))
+        else:
+            db.session.execute(text("UPDATE idempotency_record SET scope = 'user:' || COALESCE(CAST(user_id AS TEXT), 'anonymous') WHERE scope IS NULL"))
+    db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_idempotency_scope_key_idx ON idempotency_record (scope, key)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_idempotency_user_id ON idempotency_record (user_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_idempotency_created ON idempotency_record (created_at)"))
+
+
+def _migration_9_logical_uniqueness():
+    tables = set(inspect(db.engine).get_table_names())
+    if "maintenance_bill" in tables:
+        duplicate = db.session.execute(text("SELECT user_id, lower(trim(month)) AS month_key FROM maintenance_bill GROUP BY user_id, lower(trim(month)) HAVING COUNT(*) > 1 LIMIT 1")).first()
+        if duplicate:
+            raise RuntimeError(f"Cannot enforce maintenance-bill uniqueness: duplicate bill exists for resident {duplicate[0]} / {duplicate[1]}")
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_bill_user_month ON maintenance_bill (user_id, lower(trim(month)))"))
+    if "payment" in tables:
+        duplicate_bill = db.session.execute(text("SELECT bill_id FROM payment WHERE status = 'paid' AND bill_id IS NOT NULL GROUP BY bill_id HAVING COUNT(*) > 1 LIMIT 1")).first()
+        if duplicate_bill:
+            raise RuntimeError(f"Cannot enforce paid-bill uniqueness: multiple paid payments exist for bill {duplicate_bill[0]}")
+        duplicate_order = db.session.execute(text("SELECT work_order_id FROM payment WHERE status = 'paid' AND work_order_id IS NOT NULL GROUP BY work_order_id HAVING COUNT(*) > 1 LIMIT 1")).first()
+        if duplicate_order:
+            raise RuntimeError(f"Cannot enforce paid-work-order uniqueness: multiple paid payments exist for work order {duplicate_order[0]}")
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_paid_bill ON payment (bill_id) WHERE status = 'paid' AND bill_id IS NOT NULL"))
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_paid_work_order ON payment (work_order_id) WHERE status = 'paid' AND work_order_id IS NOT NULL"))
+
+
+def _migration_10_domain_constraints():
+    """Validate and add simple PostgreSQL domain checks without PL/pgSQL."""
+    if db.engine.dialect.name != "postgresql":
+        return
+    checks = (
+        ("maintenance_bill", "amount", "ck_maintenance_bill_amount_nonnegative", "amount >= 0"),
+        ("payment", "amount", "ck_payment_amount_nonnegative", "amount >= 0"),
+        ("expense", "amount", "ck_expense_amount_nonnegative", "amount >= 0"),
+        ("invoice", "amount", "ck_invoice_amount_nonnegative", "amount >= 0"),
+        ("quotation", "amount", "ck_quotation_amount_nonnegative", "amount >= 0"),
+        ("work_order", "amount", "ck_work_order_amount_nonnegative", "amount >= 0"),
+    )
+    for table, column, name, expression in checks:
+        if table not in set(inspect(db.engine).get_table_names()):
+            continue
+        bad = db.session.execute(text(f"SELECT 1 FROM {table} WHERE {column} < 0 LIMIT 1")).first()
+        if bad:
+            raise RuntimeError(f"Cannot enforce {name}: negative {column} data exists")
+        exists = db.session.execute(text("SELECT 1 FROM pg_constraint WHERE conname = :name"), {"name": name}).first()
+        if not exists:
+            db.session.execute(text(f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({expression})"))
+    if "rating" in set(inspect(db.engine).get_table_names()):
+        bad = db.session.execute(text("SELECT 1 FROM rating WHERE stars < 1 OR stars > 5 LIMIT 1")).first()
+        if bad:
+            raise RuntimeError("Cannot enforce rating range: existing stars value is outside 1..5")
+        exists = db.session.execute(text("SELECT 1 FROM pg_constraint WHERE conname = 'ck_rating_stars_range'")).first()
+        if not exists:
+            db.session.execute(text("ALTER TABLE rating ADD CONSTRAINT ck_rating_stars_range CHECK (stars BETWEEN 1 AND 5)"))
+
+
+def _migration_11_auth_rate_limit():
+    db.session.execute(text("CREATE TABLE IF NOT EXISTS auth_rate_limit (id INTEGER PRIMARY KEY, scope VARCHAR(220) NOT NULL UNIQUE, failures INTEGER NOT NULL DEFAULT 0, window_started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, blocked_until TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_auth_rate_limit_scope ON auth_rate_limit (scope)"))
+
+
 def migration_status():
-    """Return applied and pending migration metadata without changing the schema."""
-    _ensure_table()
+    """Return migration metadata without creating or changing schema objects."""
+    if "schema_migrations" not in set(inspect(db.engine).get_table_names()):
+        return {"applied": [], "pending": [{"version": version, "name": name} for version, name, _ in MIGRATIONS], "current": 0, "latest": max((version for version, _, _ in MIGRATIONS), default=0)}
     applied_rows = db.session.execute(
         text("SELECT version, name, applied_at FROM schema_migrations ORDER BY version")
     ).mappings().all()

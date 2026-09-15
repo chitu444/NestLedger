@@ -1,16 +1,19 @@
 from datetime import date
 from calendar import month_name
 
-from flask import Blueprint, request
-from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, set_access_cookies, unset_jwt_cookies
 from sqlalchemy.exc import IntegrityError
 from utils.auth import current_user
+from utils.idempotency import idempotent
+from utils.rate_limit import login_allowed, login_failure, login_success
 
 from models.db import db
 from models.payment import MaintenanceBill
 from models.user import User
 from models.vendor import Vendor
 from utils.concurrency import lock_fingerprint
+from utils.apartments import claim_apartment, release_apartment
 from utils.validators import (
     PUBLIC_ROLES,
     required_text,
@@ -33,18 +36,25 @@ def get_current_user():
 def apartments():
     """Return the A–M × 7 apartment map for public registration."""
     from utils.validators import APARTMENT_CODES
-    occupied = {
-        str(value).strip().upper()
-        for (value,) in db.session.query(User.apartment)
-        .filter(User.role == "resident", User.apartment.isnot(None))
-        .all()
-        if str(value or "").strip().upper() in APARTMENT_CODES
-    }
+    try:
+        from models.apartment_slot import ApartmentSlot
+        rows = db.session.execute(db.select(ApartmentSlot.code, ApartmentSlot.claimed_by_user_id)).all()
+        occupied = {code for code, owner in rows if owner is not None}
+    except Exception:
+        db.session.rollback()
+        occupied = {
+            str(value).strip().upper()
+            for (value,) in db.session.query(User.apartment)
+            .filter(User.role == "resident", User.apartment.isnot(None))
+            .all()
+            if str(value or "").strip().upper() in APARTMENT_CODES
+        }
     return {
         "apartments": [{"code": code, "occupied": code in occupied} for code in APARTMENT_CODES]
     }
 
 @auth_bp.post("/auth/register")
+@idempotent
 def register():
     data = request.get_json(silent=True) or {}
 
@@ -103,6 +113,11 @@ def register():
     db.session.add(user)
     try:
         db.session.flush()
+        if role == "resident":
+            claimed, claim_error = claim_apartment(apartment, user.id)
+            if not claimed:
+                db.session.rollback()
+                return {"error": claim_error}, 409
     except IntegrityError:
         db.session.rollback()
         return {"error": f"Apartment {apartment} is already occupied"}, 409
@@ -161,6 +176,9 @@ def login():
     ok, err = valid_email(email)
     if not ok or not password:
         return {"error": "Invalid email or password"}, 401
+    allowed, limit_error = login_allowed(email)
+    if not allowed:
+        return {"error": limit_error}, 429
 
     user = User.query.filter_by(email=email).first()
     password_ok = False
@@ -170,6 +188,7 @@ def login():
         except (TypeError, ValueError):
             password_ok = False
     if user is None or not password_ok:
+        login_failure(email)
         return {"error": "Invalid email or password"}, 401
 
     # Keep role mismatch generic so the login endpoint does not disclose which
@@ -177,10 +196,21 @@ def login():
     if role and role not in PUBLIC_ROLES | {"vendor", "admin"}:
         return {"error": "Invalid email or password"}, 401
     if role and user.role != role:
+        login_failure(email)
         return {"error": "Invalid email or password"}, 401
 
+    login_success(email)
     token = create_access_token(identity=str(user.id))
-    return {"message": "Login successful", "token": token, "user": user.to_dict()}
+    response = jsonify({"message": "Login successful", "user": user.to_dict()})
+    set_access_cookies(response, token)
+    return response
+
+
+@auth_bp.post("/auth/logout")
+def logout():
+    response = jsonify({"message": "Logged out successfully"})
+    unset_jwt_cookies(response)
+    return response
 
 
 @auth_bp.post("/auth/forgot-password")
@@ -230,6 +260,7 @@ def me():
 
 @auth_bp.put("/auth/profile")
 @jwt_required()
+@idempotent
 def profile():
     user = get_current_user()
     if user is None:
@@ -254,8 +285,12 @@ def profile():
         ok, err = valid_apartment(apartment, required=True)
         if not ok:
             return {"error": err}, 400
-        if apartment != user.apartment and User.query.filter(User.role == "resident", User.apartment == apartment, User.id != user.id).first():
-            return {"error": f"Apartment {apartment} is already occupied"}, 409
+        if apartment != user.apartment:
+            old_apartment = user.apartment
+            claimed, claim_error = claim_apartment(apartment, user.id)
+            if not claimed:
+                return {"error": claim_error}, 409
+            release_apartment(old_apartment, user.id)
         user.apartment = apartment
 
     try:

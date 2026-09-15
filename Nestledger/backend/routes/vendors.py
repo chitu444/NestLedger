@@ -3,6 +3,7 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user
 
 from models.db import db
+from sqlalchemy.orm import selectinload
 from models.quotation import Quotation
 from models.user import User
 from models.vendor import Vendor
@@ -40,8 +41,10 @@ def my_quotes():
         return {"quotes": []}
 
     quotes = (
-        Quotation.query.filter_by(vendor_id=profile.id)
+        Quotation.query.options(selectinload(Quotation.vendor), selectinload(Quotation.work_order))
+        .filter_by(vendor_id=profile.id)
         .order_by(Quotation.id.desc())
+        .limit(100)
         .all()
     )
 
@@ -55,4 +58,4 @@ def my_quotes():
         item["work_order_apartment"] = order.apartment if order else None
         result.append(item)
 
-    return {"quotes": result}
+    return {"quotes": result, "meta": {"returned": len(result), "capped": len(result) >= 100}}

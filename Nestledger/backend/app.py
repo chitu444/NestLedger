@@ -5,7 +5,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask, current_app, g, jsonify, request, send_from_directory
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import JWTManager, set_access_cookies, unset_jwt_cookies
+from flask_jwt_extended.exceptions import CSRFError
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 import uuid
@@ -31,7 +32,7 @@ FRONTEND_DIR = BASE_DIR.parent / "frontend"
 
 # Explicit deployment marker. Change this value for every packaged release so /health
 # can be used to verify that Vercel is serving the newly deployed backend code.
-BUILD_ID = "PHASE-2.7-2026-09-15-01"
+BUILD_ID = "PHASE-3-2026-09-15-01"
 
 load_dotenv(BASE_DIR / ".env")
 
@@ -80,6 +81,13 @@ app.config.update(
     MAX_CONTENT_LENGTH=1 * 1024 * 1024,
     JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=4),
     JWT_DECODE_LEEWAY=10,
+    JWT_TOKEN_LOCATION=["cookies", "headers"],
+    JWT_COOKIE_SECURE=is_production,
+    JWT_COOKIE_SAMESITE="Lax",
+    JWT_COOKIE_CSRF_PROTECT=True,
+    JWT_COOKIE_HTTPONLY=True,
+    JWT_ACCESS_COOKIE_PATH="/",
+    JWT_COOKIE_CSRF_HEADER_NAME="X-CSRF-TOKEN",
     RAZORPAY_KEY_ID=os.getenv("RAZORPAY_KEY_ID", ""),
     RAZORPAY_KEY_SECRET=os.getenv("RAZORPAY_KEY_SECRET", ""),
     RAZORPAY_WEBHOOK_SECRET=os.getenv("RAZORPAY_WEBHOOK_SECRET", ""),
@@ -126,6 +134,17 @@ def jwt_revoked(jwt_header, jwt_payload):
 def jwt_fresh_required(jwt_header, jwt_payload):
     return _api_error("FRESH_TOKEN_REQUIRED", "Please sign in again to perform this action.", 401)
 
+@app.errorhandler(CSRFError)
+def jwt_csrf_error(error):
+    """Handle JWT cookie CSRF failures without relying on a non-existent JWT callback."""
+    return _api_error(
+        "CSRF_FAILED",
+        "Your session security check failed. Please refresh and try again.",
+        401,
+        request_id=getattr(g, "request_id", None),
+    )
+
+
 for blueprint in (
     auth_bp,
     dashboard_bp,
@@ -164,14 +183,14 @@ def seed_admin() -> None:
 
 with app.app_context():
     (BASE_DIR / "database").mkdir(parents=True, exist_ok=True)
-    create_all_default = "0" if app_env == "production" else "1"
-    migrations_default = "0" if app_env == "production" else "1"
-    seed_default = "0" if app_env == "production" else "1"
-    if os.getenv("RUN_DB_CREATE_ALL_ON_STARTUP", create_all_default).lower() not in {"0", "false", "no"}:
+    # Production startup is intentionally schema-read-only. Vercel cold starts
+    # must never run CREATE/ALTER/constraint migrations. Run scripts/migrate.py
+    # explicitly against the deployment database instead.
+    if not is_production and os.getenv("RUN_DB_CREATE_ALL_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
         db.create_all()
-    if os.getenv("RUN_MIGRATIONS_ON_STARTUP", migrations_default).lower() not in {"0", "false", "no"}:
+    if not is_production and os.getenv("RUN_MIGRATIONS_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
         run_migrations()
-    if os.getenv("RUN_ADMIN_SEED_ON_STARTUP", seed_default).lower() not in {"0", "false", "no"}:
+    if not is_production and os.getenv("RUN_ADMIN_SEED_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
         seed_admin()
 
 
@@ -208,8 +227,8 @@ def security_and_cache_headers(response):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     response.headers.setdefault(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://unpkg.com; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
+        "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://unpkg.com; "
+        "style-src 'self' https://fonts.googleapis.com; style-src-attr 'none'; font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; connect-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://generativelanguage.googleapis.com; "
         "frame-src https://api.razorpay.com https://checkout.razorpay.com; object-src 'none'; base-uri 'self'; form-action 'self'"
     )
@@ -333,6 +352,7 @@ def health():
         "build": BUILD_ID,
         "bi_fix": True,
         "service": "nestledger",
+        "migration_mode": "explicit" if is_production else "startup-development",
     }
 
 

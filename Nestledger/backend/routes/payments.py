@@ -9,6 +9,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from flask import Blueprint, current_app, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user_id
+from utils.idempotency import idempotent
 from utils.audit import record
 from utils.concurrency import lock_fingerprint
 from utils.pagination import paginate_query
@@ -200,6 +201,7 @@ def list_payments():
 
 @payments_bp.post("/payments/create-order")
 @jwt_required()
+@idempotent
 def create_order():
     uid = current_user_id(); data = request.get_json(silent=True) or {}
     bill = MaintenanceBill.query.filter_by(id=data.get("bill_id"), user_id=uid).with_for_update(of=MaintenanceBill).first()
@@ -225,6 +227,7 @@ def create_order():
 
 @payments_bp.post("/payments/work-order/create-order")
 @jwt_required()
+@idempotent
 def create_work_order_payment():
     uid = current_user_id(); data = request.get_json(silent=True) or {}
     order = WorkOrder.query.filter_by(id=data.get("work_order_id"), resident_id=uid).with_for_update(of=WorkOrder).first()
@@ -257,6 +260,7 @@ def create_work_order_payment():
 
 @payments_bp.post("/payments/verify")
 @jwt_required()
+@idempotent
 def verify():
     uid = current_user_id()
     data = request.get_json(silent=True) or {}
@@ -553,6 +557,7 @@ def download_receipt(pid):
 
 @payments_bp.post("/payments/<int:pid>/receipt-link")
 @jwt_required()
+@idempotent
 def create_receipt_link(pid):
     uid = current_user_id()
     payment, error = _receipt_owner_check(pid, uid)
