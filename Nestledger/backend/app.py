@@ -283,13 +283,21 @@ def database_error(error):
 
 @app.errorhandler(ValueError)
 def value_error(error):
-    if request.path.rstrip("/") == "/api/reports":
+    # BI has two public paths so deployments with stale Vercel rewrites or
+    # cached route metadata cannot fall back to the generic API ValueError.
+    path = request.path.rstrip("/")
+    endpoint = request.endpoint or ""
+    is_bi = path in {"/api/reports", "/api/business-intelligence"} or endpoint.endswith("reports.reports")
+    if is_bi:
         db.session.rollback()
-        current_app.logger.exception("ValueError while serving Business Intelligence")
-        return _api_error("REPORT_INVALID_VALUE", "Business Intelligence could not process the current data. Please refresh and try again." , 503, request_id=getattr(g, "request_id", None))
+        request_id = getattr(g, "request_id", None) or uuid.uuid4().hex[:12]
+        current_app.logger.exception("ValueError while serving Business Intelligence [%s]", request_id)
+        return _api_error("REPORT_INVALID_VALUE", "Business Intelligence encountered an invalid value. Please retry.", 503, request_id=request_id)
     if request.path.startswith("/api/"):
         db.session.rollback()
-        return _api_error("INVALID_VALUE", "The request contains an invalid value.", 400)
+        request_id = getattr(g, "request_id", None) or uuid.uuid4().hex[:12]
+        current_app.logger.exception("Unhandled API ValueError [%s]", request_id)
+        return _api_error("INVALID_VALUE", "The request contains an invalid value.", 400, request_id=request_id)
     return error
 
 

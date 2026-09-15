@@ -68,6 +68,7 @@ def _empty_report():
 
 
 @reports_bp.get("/reports")
+@reports_bp.get("/business-intelligence")
 def reports():
     """Admin BI endpoint. Always returns a predictable JSON shape on valid admin sessions."""
     # Verify the JWT inside the route so malformed/legacy tokens cannot escape

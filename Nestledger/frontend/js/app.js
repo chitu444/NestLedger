@@ -411,7 +411,7 @@ function normalizeBI(d){
 async function businessIntelligence(c){
   let d;
   try {
-    d=await api('/reports',{cacheTtl:10000});
+    d=await api('/business-intelligence',{cacheTtl:10000});
     if(!d || d.ok===false) throw new Error(d?.error?.message||'Business Intelligence could not be loaded.');
   } catch(e) { c.innerHTML=`<div class="page-title bi-title"><span class="eyebrow">${i18n.t('businessIntelligence')||'Business intelligence'}</span><h2>Community intelligence</h2><p class="muted">The analytics service could not load this time.</p></div><section class="panel"><div class="empty-state"><i data-lucide="triangle-alert"></i><h4>Business Intelligence is temporarily unavailable</h4><p>${esc(e.message||'Please sign in again and retry.')}</p><button class="primary" type="button" onclick="loadPage()"><i data-lucide="refresh-cw"></i> Retry</button></div></section>`; renderIcons(); return; }
   d=normalizeBI(d);
