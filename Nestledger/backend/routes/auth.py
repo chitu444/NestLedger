@@ -176,7 +176,11 @@ def login():
     ok, err = valid_email(email)
     if not ok or not password:
         return {"error": "Invalid email or password"}, 401
-    allowed, limit_error = login_allowed(email)
+    try:
+        allowed, limit_error = login_allowed(email)
+    except IntegrityError:
+        db.session.rollback()
+        return {"error": "Sign-in is temporarily unavailable. Please try again."}, 503
     if not allowed:
         return {"error": limit_error}, 429
 
@@ -188,7 +192,10 @@ def login():
         except (TypeError, ValueError):
             password_ok = False
     if user is None or not password_ok:
-        login_failure(email)
+        try:
+            login_failure(email)
+        except IntegrityError:
+            db.session.rollback()
         return {"error": "Invalid email or password"}, 401
 
     # Keep role mismatch generic so the login endpoint does not disclose which
@@ -196,10 +203,17 @@ def login():
     if role and role not in PUBLIC_ROLES | {"vendor", "admin"}:
         return {"error": "Invalid email or password"}, 401
     if role and user.role != role:
-        login_failure(email)
+        try:
+            login_failure(email)
+        except IntegrityError:
+            db.session.rollback()
         return {"error": "Invalid email or password"}, 401
 
-    login_success(email)
+    try:
+        login_success(email)
+    except IntegrityError:
+        db.session.rollback()
+        return {"error": "Sign-in is temporarily unavailable. Please try again."}, 503
     token = create_access_token(identity=str(user.id))
     response = jsonify({"message": "Login successful", "user": user.to_dict()})
     set_access_cookies(response, token)
@@ -297,5 +311,6 @@ def profile():
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        return {"error": f"Apartment {apartment} is already occupied"}, 409
-    return {"user": user.to_dict()}
+        if user.role != "vendor":
+            return {"error": f"Apartment {apartment} is already occupied"}, 409
+        return {"error": "Profile could not be saved because it conflicts with existing data"}, 409

@@ -15,6 +15,7 @@ from utils.concurrency import lock_fingerprint
 from utils.pagination import paginate_query
 
 from models.db import db
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from models.notification import notify
 from models.payment import MaintenanceBill, Payment, PaymentWebhookEvent
@@ -193,8 +194,18 @@ def list_payments():
     query = Payment.query.filter_by(user_id=uid)
     status = (request.args.get("status") or "").strip().lower()
     payment_type = (request.args.get("type") or "").strip().lower()
+    search = (request.args.get("q") or "").strip()
     if status: query = query.filter(Payment.status == status)
     if payment_type: query = query.filter(Payment.payment_type == payment_type)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            or_(
+                Payment.description.ilike(like),
+                Payment.razorpay_payment_id.ilike(like),
+                Payment.razorpay_order_id.ilike(like),
+            )
+        )
     rows, meta = paginate_query(query.order_by(Payment.id.desc()), default=15)
     return {"payments": [p.to_dict() for p in rows], "meta": meta}
 

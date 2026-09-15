@@ -14,29 +14,9 @@ def _get(scope):
     row = db.session.query(AuthRateLimit).filter_by(scope=scope).with_for_update().first()
     now = datetime.utcnow()
     if row is None:
-        # A PostgreSQL advisory transaction lock serializes normal concurrent
-        # requests, but a serverless cold-start can still encounter a race at
-        # the UNIQUE(scope) constraint. Use a savepoint so that a losing insert
-        # does not poison the outer request transaction; then reuse the row that
-        # won the race. This prevents the global IntegrityError handler from
-        # turning a login into a misleading HTTP 409 Conflict.
-        try:
-            with db.session.begin_nested():
-                row = AuthRateLimit(scope=scope, failures=0, window_started_at=now)
-                db.session.add(row)
-                db.session.flush()
-        except Exception as exc:
-            from sqlalchemy.exc import IntegrityError
-            if not isinstance(exc, IntegrityError):
-                raise
-            row = (
-                db.session.query(AuthRateLimit)
-                .filter_by(scope=scope)
-                .with_for_update()
-                .first()
-            )
-            if row is None:
-                raise
+        row = AuthRateLimit(scope=scope, failures=0, window_started_at=now)
+        db.session.add(row)
+        db.session.flush()
     elif now - row.window_started_at >= WINDOW:
         row.failures = 0
         row.window_started_at = now

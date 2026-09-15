@@ -163,16 +163,15 @@ for blueprint in (
 
 
 from utils.migrations import run_migrations
-from utils.concurrency import lock_fingerprint
 
 def seed_admin() -> None:
-    """Ensure the configured admin identity exists without running migrations.
+    """Create the configured admin only when it does not already exist.
 
-    This is safe to run during production startup: it only creates the admin
-    row when the configured email is absent. It never overwrites an existing
-    admin password, so an administrator can change their password without a
-    later Vercel cold start reverting it. A PostgreSQL advisory lock prevents
-    two simultaneous serverless cold starts from racing the unique email key.
+    Production serverless workers can cold-start concurrently, so serialize the
+    check/create operation with the same PostgreSQL transaction lock used by the
+    rest of the application's concurrency guards. Never overwrite an existing
+    admin password: the environment variable is the bootstrap credential, not a
+    password-reset mechanism.
     """
     email = os.getenv("ADMIN_EMAIL", "admin@nestledger.com").strip().lower()
     password = os.getenv("ADMIN_PASSWORD", "Admin@123")
@@ -190,11 +189,11 @@ def seed_admin() -> None:
         try:
             db.session.commit()
         except IntegrityError:
-            # Another serverless instance may have created the same admin after
-            # the initial lookup. Keep the existing record and continue startup.
+            # Another worker may have created the same admin after its own lock
+            # was acquired (for example on a database that does not implement
+            # advisory transaction locks). Treat that as an idempotent bootstrap.
             db.session.rollback()
-            admin = User.query.filter_by(email=email).first()
-            if admin is None:
+            if User.query.filter_by(email=email).first() is None:
                 raise
 
 
@@ -207,9 +206,7 @@ with app.app_context():
         db.create_all()
     if not is_production and os.getenv("RUN_MIGRATIONS_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
         run_migrations()
-    if (not is_production and os.getenv("RUN_ADMIN_SEED_ON_STARTUP", "1").lower() not in {"0", "false", "no"}) or (
-        is_production and os.getenv("RUN_ADMIN_SEED_ON_STARTUP", "1").lower() not in {"0", "false", "no"}
-    ):
+    if not is_production and os.getenv("RUN_ADMIN_SEED_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
         seed_admin()
 
 

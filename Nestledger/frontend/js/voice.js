@@ -168,7 +168,7 @@
     return matched ? 50 + 35*(matched/pw.length) : 0;
   }
 
-  function currentRole(){ return (global.state && global.state.role) || (global.state && global.state.user && global.state.user.role) || null; }
+  function currentRole(){ const s=global.NLState; return (s&&s.role) || (s&&s.user&&s.user.role) || null; }
   function allowed(cmd){ return !cmd.roles || cmd.roles.includes(currentRole()); }
 
   function matchCommand(transcript) {
@@ -222,7 +222,7 @@
   }
 
   function clickButtonByText(patterns, preferredPage){
-    if(preferredPage && global.state && global.state.page!==preferredPage){
+    if(preferredPage && global.NLState && global.NLState.page!==preferredPage){
       pageGo(preferredPage);
       setTimeout(()=>clickButtonByText(patterns,preferredPage),450); return true;
     }
@@ -233,7 +233,7 @@
     candidates.sort((a,b)=>b.text.length-a.text.length);candidates[0].el.click();return true;
   }
 
-  async function dashboardData(){try{return await global.api('/dashboard',{cacheTtl:5000});}catch{return null;}}
+  async function dashboardData(){try{return await global.NLApi.request('/dashboard',{cacheTtl:5000});}catch{return null;}}
   async function readDues(){
     const d=await dashboardData();
     if(!d){notify('I could not read your dues right now.');return true;}
@@ -246,8 +246,9 @@
   }
 
   function visibleQuoteSummary(){
-    const cache=global.state&&global.state.quoteCache;
-    const page=global.state&&global.state.page;
+    const s=global.NLState;
+    const cache=s&&s.quoteCache;
+    const page=s&&s.page;
     if(!cache||page!=='workorders')return null;
     const ids=Object.keys(cache);
     const all=ids.flatMap(id=>Array.isArray(cache[id])?cache[id]:[]);
@@ -342,7 +343,7 @@
     if(typeof global.exportList==='function'){
       const t=normalize(transcript);
       const format=/\bcsv\b/.test(t)?'csv':'xlsx';
-      global.exportList(resource,format,global.state&&global.state.page||'dashboard');
+      global.exportList(resource,format,(global.NLState&&global.NLState.page)||'dashboard');
       return;
     }
     notify('Export is not available on this screen.');
