@@ -1822,3 +1822,39 @@ html[data-theme="dark"] .apartment-seat.occupied small{color:#8f878e!important}
 html[data-theme="dark"] .notice-soft{background:#302b34!important}.notice-lavender{background:#eef0ff}.notice-warm{background:#fff8e6}
 /* The application no longer relies on semantic <em> for visual italics. */
 html,body,button,input,select,textarea,h1,h2,h3,h4,h5,h6,p,span,b,strong,small,a,li,td,th,em{font-style:normal!important}
+
+
+/* === Android final layout correction ===
+   The Android wrapper uses the production Vercel page, so these rules must
+   make the web UI itself fully responsive at handset widths. */
+@media (max-width: 900px){
+  html,body,#app{width:100%!important;min-width:0!important;max-width:100%!important;overflow-x:hidden!important}
+  .auth{display:block!important;min-height:100dvh!important;width:100%!important}
+  .auth-art{display:none!important}
+  .auth-panel{min-height:100dvh!important;width:100%!important;padding:16px!important;display:flex!important;align-items:center!important;justify-content:center!important}
+  .auth-card{width:min(100%,420px)!important;max-width:420px!important;margin:0 auto!important;padding:24px 20px!important;border-radius:20px!important}
+  .auth-panel>.lang-select{top:14px!important;right:14px!important;z-index:10}
+  .shell{display:block!important;width:100%!important;min-width:0!important}
+  .sidebar{width:100%!important;min-width:0!important;max-width:none!important;position:relative!important;height:auto!important;display:block!important}
+  .main{width:100%!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:14px 12px calc(30px + env(safe-area-inset-bottom))!important}
+  .content-wrap{width:100%!important;min-width:0!important;max-width:100%!important}
+  .topbar{width:100%!important;min-width:0!important}
+  .topbar-copy{min-width:0!important}
+  .topbar-copy h1,.topbar-copy p{max-width:100%!important;overflow-wrap:anywhere!important}
+}
+@media (max-width: 480px){
+  .auth-panel{padding:12px!important;align-items:center!important}
+  .auth-card{padding:22px 16px!important;border-radius:18px!important}
+  .auth-card h2{font-size:30px!important;line-height:1.08!important}
+  .role-switch{gap:6px!important;margin-bottom:16px!important}
+  .role-btn{padding:11px 4px!important;font-size:13px!important}
+  .field{margin:11px 0!important}
+  .field input,.field select,.field textarea{padding:12px!important}
+  .primary{padding:13px!important}
+  .side-brand{padding-left:2px!important;padding-right:2px!important}
+  .nav{width:100%!important;grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  .nav button{min-width:0!important;width:100%!important}
+}
+@media (max-width: 360px){
+  .nav{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
