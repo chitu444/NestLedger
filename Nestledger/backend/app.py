@@ -210,9 +210,7 @@ def security_and_cache_headers(response):
     if request.path.startswith("/api/") or (response.content_type and response.content_type.startswith("text/html")):
         response.headers["Cache-Control"] = "no-store"
     elif response.content_type and (response.content_type.startswith("text/css") or response.content_type.startswith("application/javascript")):
-        # SPA assets must not be browser-cached across deployments; otherwise an old
-        # app.js can keep calling the old BI endpoint/error handler after a Vercel deploy.
-        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers.setdefault("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400")
     return response
 
 
@@ -288,7 +286,7 @@ def value_error(error):
     if request.path == "/api/reports":
         db.session.rollback()
         current_app.logger.exception("ValueError while serving Business Intelligence")
-        return _api_error("REPORT_INVALID_VALUE", "Business Intelligence could not process the current data. Please refresh and try again.", 503, request_id=getattr(g, "request_id", None))
+        return _api_error("REPORT_INVALID_VALUE", "Business Intelligence could not process the current data. Please refresh and try again." , 503, request_id=getattr(g, "request_id", None))
     if request.path.startswith("/api/"):
         db.session.rollback()
         return _api_error("INVALID_VALUE", "The request contains an invalid value.", 400)
@@ -315,7 +313,7 @@ def home():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "build": "BI-ACTUAL-FIX-2026-09-15"}
+    return {"status": "ok", "build": BUILD_ID, "bi_fix": True}
 
 
 @app.get("/api/health")
@@ -328,6 +326,8 @@ def api_health():
         ready = not migrations["pending"]
         return jsonify({
             "status": "ok" if ready else "degraded",
+            "build": BUILD_ID,
+            "bi_fix": True,
             "database": "ok",
             "migrations": {
                 "current": migrations["current"],

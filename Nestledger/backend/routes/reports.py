@@ -59,19 +59,21 @@ def _empty_report():
 
 @reports_bp.get("/reports")
 def reports():
-    """Admin BI endpoint with explicit authentication and predictable JSON errors."""
+    """Admin BI endpoint. Always returns a predictable JSON shape on valid admin sessions."""
+    # Verify the JWT inside the route so malformed/legacy tokens cannot escape
+    # the endpoint as a ValueError (which previously became the misleading
+    # generic 400 "invalid value" response).
     try:
-        # Do not let JWT/identity ValueError reach Flask's generic ValueError handler.
         verify_jwt_in_request()
-        user = current_user()
-        if user is None:
-            return {"ok": False, "error": {"code": "INVALID_TOKEN", "message": "Your session is invalid. Please sign in again."}}, 401
-        if str(getattr(user, "role", "")).lower() != "admin":
-            return {"ok": False, "error": {"code": "ADMIN_REQUIRED", "message": "Admin access required."}}, 403
     except Exception:
-        db.session.rollback()
         log.exception("BI authentication failed")
         return {"ok": False, "error": {"code": "INVALID_TOKEN", "message": "Your session token is invalid. Please sign in again."}}, 401
+
+    user = current_user()
+    if user is None:
+        return {"ok": False, "error": {"code": "USER_NOT_FOUND", "message": "Your session is no longer valid. Please sign in again."}}, 401
+    if user.role != "admin":
+        return {"ok": False, "error": {"code": "ADMIN_REQUIRED", "message": "Admin access required."}}, 403
 
     try:
         collection = float(db.session.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
