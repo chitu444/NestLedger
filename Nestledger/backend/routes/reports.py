@@ -3,7 +3,7 @@ from datetime import datetime
 import logging
 
 from flask import Blueprint
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import verify_jwt_in_request
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -58,9 +58,17 @@ def _empty_report():
 
 
 @reports_bp.get("/reports")
-@jwt_required()
 def reports():
     """Admin BI endpoint. Always returns a predictable JSON shape on valid admin sessions."""
+    # Verify the JWT inside the route so malformed/legacy tokens cannot escape
+    # the endpoint as a ValueError (which previously became the misleading
+    # generic 400 "invalid value" response).
+    try:
+        verify_jwt_in_request()
+    except Exception:
+        log.exception("BI authentication failed")
+        return {"ok": False, "error": {"code": "INVALID_TOKEN", "message": "Your session token is invalid. Please sign in again."}}, 401
+
     user = current_user()
     if user is None:
         return {"ok": False, "error": {"code": "USER_NOT_FOUND", "message": "Your session is no longer valid. Please sign in again."}}, 401
