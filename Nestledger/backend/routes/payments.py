@@ -10,6 +10,7 @@ from flask import Blueprint, current_app, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user_id
 from utils.audit import record
+from utils.concurrency import lock_fingerprint
 from utils.pagination import paginate_query
 
 from models.db import db
@@ -79,6 +80,25 @@ def create_payment_order(*, uid, amount, description, receipt, notes, bill_id=No
     if max_amount_paise < 100 or amount_paise > max_amount_paise:
         max_rupees = max_amount_paise / 100
         return None, ({"error": f"Payment amount exceeds the configured Razorpay order limit of ₹{max_rupees:,.0f}."}, 400)
+
+    # Serialize repeated checkout clicks/retries for the same bill or work order.
+    # If a usable local order already exists, return it instead of creating a second
+    # Razorpay order. This is stronger than a UI submit lock because it survives
+    # browser retries and concurrent requests.
+    if bill_id:
+        lock_fingerprint(f"payment-order:bill:{uid}:{bill_id}")
+        existing = (Payment.query.filter_by(user_id=uid, bill_id=bill_id, status="created")
+                    .order_by(Payment.id.desc()).first())
+    elif work_order_id:
+        lock_fingerprint(f"payment-order:work:{uid}:{work_order_id}")
+        existing = (Payment.query.filter_by(user_id=uid, work_order_id=work_order_id, status="created")
+                    .order_by(Payment.id.desc()).first())
+    else:
+        existing = None
+    if existing and existing.razorpay_order_id:
+        return {"order_id": existing.razorpay_order_id, "amount": _amount_paise(existing.amount),
+                "currency": "INR", "key_id": current_app.config["RAZORPAY_KEY_ID"],
+                "name": "NestLedger", "description": existing.description}, None
 
     # Razorpay requires a unique receipt of at most 40 characters.
     receipt = str(receipt or "").strip()[:32] + "-" + uuid.uuid4().hex[:7]

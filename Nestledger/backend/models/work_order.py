@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import func
 
 from models.db import db
+from utils.validators import money_value
 
 
 class WorkOrder(db.Model):
@@ -14,7 +15,7 @@ class WorkOrder(db.Model):
     resident_id = db.Column(db.Integer, db.ForeignKey("user.id"), index=True)
     apartment = db.Column(db.String(60))
     vendor_id = db.Column(db.Integer, db.ForeignKey("vendor.id"), index=True)
-    amount = db.Column(db.Float, default=0)
+    amount = db.Column(db.Numeric(12, 2), default=0)
     due_date = db.Column(db.String(30))
     status = db.Column(db.String(30), default="open", index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -83,7 +84,7 @@ class WorkOrder(db.Model):
             "vendor_name": self.vendor.name if self.vendor else "Unassigned",
             "vendor_service": self.vendor.service if self.vendor else None,
             "vendor_contact": self.vendor.contact if self.vendor else None,
-            "amount": self.amount,
+            "amount": money_value(self.amount),
             "due_date": self.due_date,
             "status": self.status,
             "payment_status": "paid" if paid_id else ("pending" if pending_id else "unpaid"),

@@ -47,7 +47,23 @@ def main():
             body = json.load(r)
             if body.get("status") != "ok":
                 raise RuntimeError(body)
-            return f"migrations {body['migrations']['current']}/{body['migrations']['latest']}"
+            migrations = body.get("migrations") or {}
+            if migrations.get("pending", 0):
+                raise RuntimeError(f"pending migrations: {migrations.get("pending")}")
+            return f"build {body.get("build", "unknown")} · migrations {migrations.get("current")}/{migrations.get("latest")}"
+
+    def bi_unauthenticated():
+        # This deliberately checks the route without credentials. A healthy
+        # deployment should reject it as an auth failure, not return a generic
+        # 400 or a Vercel rewrite error.
+        try:
+            request(base, "/api/business-intelligence")
+        except urllib.error.HTTPError as exc:
+            body = json.loads(exc.read().decode() or "{}")
+            if exc.code != 401:
+                raise RuntimeError(f"HTTP {exc.code}: {body}")
+            return f"HTTP 401 · {body.get("error", {}).get("code", "AUTH_REQUIRED")}"
+        raise RuntimeError("BI endpoint unexpectedly allowed an unauthenticated request")
 
     def frontend():
         with request(base, "/") as r:
@@ -60,6 +76,7 @@ def main():
             return "HTTP 200 + security headers"
 
     check("health/database/migrations", health, failures)
+    check("BI authentication contract", bi_unauthenticated, failures)
     check("frontend/security headers", frontend, failures)
 
     email = os.getenv("ADMIN_EMAIL", "").strip()

@@ -31,7 +31,7 @@ FRONTEND_DIR = BASE_DIR.parent / "frontend"
 
 # Explicit deployment marker. Change this value for every packaged release so /health
 # can be used to verify that Vercel is serving the newly deployed backend code.
-BUILD_ID = "PHASE-2.1-2026-09-15-01"
+BUILD_ID = "PHASE-2.6-2026-09-15-01"
 
 load_dotenv(BASE_DIR / ".env")
 
@@ -204,6 +204,8 @@ def security_and_cache_headers(response):
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), payment=(self), usb=()")
+    if is_production:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://unpkg.com; "
@@ -221,41 +223,41 @@ def security_and_cache_headers(response):
 @app.errorhandler(400)
 def bad_request(error):
     if request.path.startswith("/api/"):
-        return _api_error("BAD_REQUEST", "The request could not be processed.", 400)
+        return _api_error("BAD_REQUEST", "The request could not be processed.", 400, request_id=getattr(g, "request_id", None))
     return error
 
 
 @app.errorhandler(404)
 def not_found(error):
     if request.path.startswith("/api/"):
-        return {"ok": False, "error": {"code": "NOT_FOUND", "message": "The requested resource was not found."}}, 404
+        return _api_error("NOT_FOUND", "The requested resource was not found.", 404, request_id=getattr(g, "request_id", None))
     return send_from_directory(app.static_folder, "index.html")
 
 
 @app.errorhandler(405)
 def method_not_allowed(error):
     if request.path.startswith("/api/"):
-        return _api_error("METHOD_NOT_ALLOWED", "This method is not allowed for the requested resource.", 405)
+        return _api_error("METHOD_NOT_ALLOWED", "This method is not allowed for the requested resource.", 405, request_id=getattr(g, "request_id", None))
     return error
 
 
 @app.errorhandler(401)
 def unauthorized(error):
     if request.path.startswith("/api/"):
-        return _api_error("AUTH_REQUIRED", "Authentication is required. Please sign in.", 401)
+        return _api_error("AUTH_REQUIRED", "Authentication is required. Please sign in.", 401, request_id=getattr(g, "request_id", None))
     return error
 
 
 @app.errorhandler(422)
 def unprocessable_entity(error):
     if request.path.startswith("/api/"):
-        return _api_error("UNPROCESSABLE_ENTITY", "The request could not be validated.", 422)
+        return _api_error("UNPROCESSABLE_ENTITY", "The request could not be validated.", 422, request_id=getattr(g, "request_id", None))
     return error
 
 
 @app.errorhandler(413)
 def request_too_large(error):
-    return _api_error("PAYLOAD_TOO_LARGE", "The request body is too large.", 413) if request.path.startswith("/api/") else error
+    return _api_error("PAYLOAD_TOO_LARGE", "The request body is too large.", 413, request_id=getattr(g, "request_id", None)) if request.path.startswith("/api/") else error
 
 
 @app.errorhandler(IntegrityError)
@@ -263,7 +265,7 @@ def integrity_error(error):
     db.session.rollback()
     current_app.logger.exception("Database integrity error")
     if request.path.startswith("/api/"):
-        return _api_error("CONFLICT", "The request conflicts with existing data. Check for a duplicate record and try again.", 409)
+        return _api_error("CONFLICT", "The request conflicts with existing data. Check for a duplicate record and try again.", 409, request_id=getattr(g, "request_id", None))
     return error
 
 
@@ -272,7 +274,7 @@ def database_unavailable(error):
     db.session.rollback()
     current_app.logger.exception("Database operational error")
     if request.path.startswith("/api/"):
-        return _api_error("DATABASE_UNAVAILABLE", "The database is temporarily unavailable. Please try again.", 503)
+        return _api_error("DATABASE_UNAVAILABLE", "The database is temporarily unavailable. Please try again.", 503, request_id=getattr(g, "request_id", None))
     return error
 
 
@@ -281,7 +283,7 @@ def database_error(error):
     db.session.rollback()
     current_app.logger.exception("Database error")
     if request.path.startswith("/api/"):
-        return _api_error("DATABASE_ERROR", "The database could not complete this request. Please try again.", 503)
+        return _api_error("DATABASE_ERROR", "The database could not complete this request. Please try again.", 503, request_id=getattr(g, "request_id", None))
     return error
 
 
@@ -361,7 +363,7 @@ def api_health():
 
 @app.get("/api/<path:missing>")
 def api_not_found(missing: str):
-    return _api_error("NOT_FOUND", "API endpoint not found.", 404)
+    return _api_error("NOT_FOUND", "API endpoint not found.", 404, request_id=getattr(g, "request_id", None))
 
 
 @app.get("/<path:path>")

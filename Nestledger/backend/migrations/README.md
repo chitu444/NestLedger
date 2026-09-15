@@ -8,6 +8,8 @@ The current migration history is:
 - **2 — add_query_indexes:** creates the composite indexes used by pagination, filtering, dashboard queries, and reports.
 - **3 — enforce_pending_quote_uniqueness:** removes legacy duplicate pending quotes for the same vendor/work order, then enforces one pending quote per vendor/work order at the database level.
 - **4 — enforce_resident_apartment_uniqueness:** enforces one resident owner per non-null apartment value at the database level; valid new registrations use the fixed A-1 through M-7 inventory.
+- **5 — limit_apartment_inventory_to_a_m:** restricts resident apartment assignments to A-1 through M-7 on PostgreSQL; SQLite relies on the application validator.
+- **6 — harden_financial_amount_precision:** converts financial amount columns to PostgreSQL `NUMERIC(12,2)` after validating existing values; SQLite keeps NUMERIC affinity because it cannot alter column types in-place.
 
 Migrations are intentionally additive and non-destructive. Existing data is not dropped or rewritten beyond backfilling `complaint.updated_at` from `created_at` when the column is introduced and collapsing duplicate pending quotes so the new uniqueness rule can be applied.
 

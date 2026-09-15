@@ -36,6 +36,14 @@
       if (options.signal.aborted) controller.abort();
       else options.signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
+    // Page navigation requests share a page-level AbortController. This stops
+    // obsolete GETs when the user changes screens instead of letting old requests
+    // continue consuming browser/database resources. Explicit request signals still
+    // take precedence.
+    if (isGet && options.pageSeq != null && window.__NLPageAbortController) {
+      if (window.__NLPageAbortController.signal.aborted) controller.abort();
+      else window.__NLPageAbortController.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
     options.signal = controller.signal;
 
     const run = (async () => {
@@ -45,7 +53,11 @@
         try { data = await response.json(); } catch { data = {}; }
         if (response.status === 401) {
           window.NLCore?.onUnauthorized?.();
-          throw new Error(window.i18n?.t('requestFailed') || 'Session expired. Please sign in again.');
+          const authError = new Error(data?.error?.message || window.i18n?.t('requestFailed') || 'Session expired. Please sign in again.');
+          authError.status = 401;
+          authError.code = data?.error?.code;
+          authError.requestId = data?.error?.request_id || response.headers.get('X-Request-ID') || null;
+          throw authError;
         }
         if (!response.ok) {
           const message = data?.error?.message || data?.error || data?.message || `Request failed (${response.status})`;
@@ -96,6 +108,14 @@
     if (options.signal) {
       if (options.signal.aborted) controller.abort();
       else options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+    // Page navigation requests share a page-level AbortController. This stops
+    // obsolete GETs when the user changes screens instead of letting old requests
+    // continue consuming browser/database resources. Explicit request signals still
+    // take precedence.
+    if (isGet && options.pageSeq != null && window.__NLPageAbortController) {
+      if (window.__NLPageAbortController.signal.aborted) controller.abort();
+      else window.__NLPageAbortController.signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
     options.signal = controller.signal;
     try {

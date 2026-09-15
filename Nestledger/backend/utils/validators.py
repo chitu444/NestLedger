@@ -105,6 +105,17 @@ def valid_date(value: str, *, required: bool = False, fmt: str = "%Y-%m-%d"):
     return True, None
 
 
+def money_value(value):
+    """Return a JSON-safe, two-decimal numeric representation of an amount."""
+    try:
+        amount = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(amount):
+        return 0.0
+    return round(amount, 2)
+
+
 def valid_amount(value, *, allow_zero: bool = True):
     try:
         amount = float(value)

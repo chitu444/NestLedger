@@ -10,6 +10,7 @@ from models.db import db
 from models.payment import MaintenanceBill
 from models.user import User
 from models.vendor import Vendor
+from utils.concurrency import lock_fingerprint
 from utils.validators import (
     PUBLIC_ROLES,
     required_text,
@@ -73,14 +74,19 @@ def register():
     if role not in PUBLIC_ROLES:
         return {"error": "Public registration is available for Residents only"}, 400
 
-    if User.query.filter_by(email=email).first():
-        return {"error": "Email already registered"}, 409
-
     # Public registration uses the fixed A-1 .. M-7 inventory.
     apartment = str(data.get("apartment", "")).strip().upper() or None
     ok, err = valid_apartment(apartment, required=True)
     if not ok:
         return {"error": err}, 400
+
+    # Serialize concurrent registrations for the same identity/unit. The database
+    # uniqueness constraints remain the final authority, while the advisory locks
+    # prevent two near-simultaneous requests from both passing the preflight checks.
+    lock_fingerprint(f"register-email:{email}")
+    lock_fingerprint(f"register-apartment:{apartment}")
+    if User.query.filter_by(email=email).first():
+        return {"error": "Email already registered"}, 409
     if User.query.filter(User.role == "resident", User.apartment == apartment).first():
         return {"error": f"Apartment {apartment} is already occupied"}, 409
     if role == "vendor":

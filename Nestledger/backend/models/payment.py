@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from models.db import db
+from utils.validators import money_value
 
 
 class MaintenanceBill(db.Model):
@@ -12,7 +13,7 @@ class MaintenanceBill(db.Model):
         nullable=False,
         index=True,
     )
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
     description = db.Column(db.String(255), default="Monthly Maintenance")
     month = db.Column(db.String(40), nullable=False)
     due_date = db.Column(db.String(30), nullable=False)
@@ -27,7 +28,7 @@ class MaintenanceBill(db.Model):
         return {
             "id": self.id,
             "user_id": self.user_id,
-            "amount": self.amount,
+            "amount": money_value(self.amount),
             "description": self.description,
             "month": self.month,
             "due_date": self.due_date,
@@ -65,7 +66,7 @@ class Payment(db.Model):
         index=True,
     )
     payment_type = db.Column(db.String(40), default="maintenance", index=True)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
     description = db.Column(db.String(255), default="Maintenance")
     status = db.Column(db.String(30), default="created", index=True)
     razorpay_order_id = db.Column(db.String(120), unique=True)
@@ -84,7 +85,7 @@ class Payment(db.Model):
             "bill_id": self.bill_id,
             "work_order_id": self.work_order_id,
             "payment_type": self.payment_type,
-            "amount": self.amount,
+            "amount": money_value(self.amount),
             "description": self.description,
             "status": self.status,
             "razorpay_order_id": self.razorpay_order_id,

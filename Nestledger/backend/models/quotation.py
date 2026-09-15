@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from models.db import db
+from utils.validators import money_value
 
 QUOTE_STATUSES = {"pending", "accepted", "rejected", "withdrawn"}
 
@@ -28,7 +29,7 @@ class Quotation(db.Model):
         nullable=False,
         index=True,
     )
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
     note = db.Column(db.Text)
     status = db.Column(db.String(20), default="pending", index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -45,7 +46,7 @@ class Quotation(db.Model):
             "vendor_name": self.vendor.name if self.vendor else None,
             "vendor_service": self.vendor.service if self.vendor else None,
             "vendor_contact": self.vendor.contact if self.vendor else None,
-            "amount": self.amount,
+            "amount": money_value(self.amount),
             "note": self.note,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,

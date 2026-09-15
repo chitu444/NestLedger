@@ -15,6 +15,7 @@ MIGRATIONS = (
     (3, "enforce_pending_quote_uniqueness", "_migration_3_quote_integrity"),
     (4, "enforce_resident_apartment_uniqueness", "_migration_4_apartment_integrity"),
     (5, "limit_apartment_inventory_to_a_m", "_migration_5_apartment_inventory"),
+    (6, "harden_financial_amount_precision", "_migration_6_financial_precision"),
 )
 
 
@@ -140,7 +141,10 @@ def run_migrations():
                 {"v": version, "n": name},
             )
             db.session.commit()
-        except SQLAlchemyError:
+        except Exception:
+            # A migration may raise a non-SQLAlchemy error (for example a
+            # validation/runtime error). Always clear the transaction before
+            # surfacing it so a serverless worker cannot reuse a failed session.
             db.session.rollback()
             raise
     return migration_status()
@@ -232,3 +236,27 @@ def _migration_4_apartment_integrity():
         CREATE UNIQUE INDEX IF NOT EXISTS uq_user_resident_apartment
         ON "user" (apartment) WHERE role = 'resident' AND apartment IS NOT NULL
     """))
+
+
+def _migration_6_financial_precision():
+    """Convert financial amounts to exact two-decimal NUMERIC on PostgreSQL."""
+    tables = ("maintenance_bill", "payment", "quotation", "invoice", "expense", "work_order")
+    existing = set(inspect(db.engine).get_table_names())
+    tables = [t for t in tables if t in existing]
+    if db.engine.dialect.name != "postgresql":
+        return
+    for table in tables:
+        bad = db.session.execute(text(
+            f"SELECT COUNT(*) FROM {table} WHERE amount IS NULL OR amount < 0 "
+            "OR amount > 9999999999.99 OR amount <> amount "
+            "OR amount = 'Infinity'::double precision OR amount = '-Infinity'::double precision"
+        )).scalar()
+        if bad:
+            raise RuntimeError(
+                f"Cannot convert {table}.amount to NUMERIC(12,2): {bad} invalid financial amount(s) found."
+            )
+    for table in tables:
+        db.session.execute(text(
+            f"ALTER TABLE {table} ALTER COLUMN amount TYPE NUMERIC(12,2) "
+            "USING ROUND(amount::numeric, 2)"
+        ))

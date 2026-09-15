@@ -4,6 +4,7 @@ from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user
 from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.exc import IntegrityError
 
 from models.db import db
 from models.notification import notify
@@ -276,6 +277,7 @@ def accept_order(wid):
     order = db.session.get(WorkOrder, wid, with_for_update=True)
     if order is None:
         return {"error": "Work order not found"}, 404
+    lock_fingerprint(f"work-order-action:{wid}:accept")
     if order.status != "open" or order.vendor_id is not None:
         return {"error": "This work order is no longer available"}, 409
     if not vendor_matches_order(profile, order):
@@ -317,6 +319,7 @@ def withdraw_order(wid):
     order = db.session.get(WorkOrder, wid, with_for_update=True)
     if order is None:
         return {"error": "Work order not found"}, 404
+    lock_fingerprint(f"work-order-action:{wid}:withdraw:{user.id}")
     if order.vendor_id != profile.id:
         return {"error": "You can only withdraw from jobs assigned to you"}, 403
     if order.status not in {"accepted", "in_progress"}:
@@ -537,6 +540,7 @@ def list_quotes(wid):
 @workorders_bp.patch("/work-orders/<int:wid>/quotes/<int:qid>/accept")
 @jwt_required()
 def accept_quote(wid, qid):
+    lock_fingerprint(f"quote-action:{wid}:{qid}:accept")
     """Resident/admin accepts one quote.
 
     This is the segregation-critical path: accepting assigns the vendor,
@@ -612,6 +616,7 @@ def accept_quote(wid, qid):
 @workorders_bp.patch("/work-orders/<int:wid>/quotes/<int:qid>/reject")
 @jwt_required()
 def reject_quote(wid, qid):
+    lock_fingerprint(f"quote-action:{wid}:{qid}:reject")
     """Resident/admin declines a single quote without accepting another."""
     user = current_user()
     if user is None:
@@ -650,6 +655,7 @@ def reject_quote(wid, qid):
 @workorders_bp.patch("/work-orders/<int:wid>/quotes/<int:qid>/withdraw")
 @jwt_required()
 def withdraw_quote(wid, qid):
+    lock_fingerprint(f"quote-action:{wid}:{qid}:withdraw")
     """A vendor withdraws their own pending quote."""
     user = current_user()
     if user is None or user.role != "vendor":
@@ -722,7 +728,14 @@ def rate_order(wid):
         remarks=remarks,
     )
     db.session.add(rating)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        existing = Rating.query.filter_by(work_order_id=order.id).first()
+        if existing is not None:
+            return {"error": "This job has already been rated", "rating": existing.to_dict()}, 409
+        raise
 
     vendor = db.session.get(Vendor, order.vendor_id)
     if vendor and vendor.user_id:

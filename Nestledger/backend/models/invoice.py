@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from models.db import db
+from utils.validators import money_value
 
 
 class Invoice(db.Model):
@@ -13,7 +14,7 @@ class Invoice(db.Model):
         index=True,
     )
     work_order_id = db.Column(db.Integer, index=True)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
     status = db.Column(db.String(30), default="pending", index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -25,7 +26,7 @@ class Invoice(db.Model):
             "vendor_id": self.vendor_id,
             "vendor_name": self.vendor.name if self.vendor else "",
             "work_order_id": self.work_order_id,
-            "amount": self.amount,
+            "amount": money_value(self.amount),
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

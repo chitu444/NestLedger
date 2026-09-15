@@ -24,7 +24,7 @@ class AdminExportTests(unittest.TestCase):
         db.create_all()
         admin = User(name="Admin", email="test-admin@nestledger.local", role="admin")
         admin.set_password("TestAdmin@123")
-        resident = User(name="Resident One", email="resident@example.com", role="resident", apartment="A-101", phone="9999999999")
+        resident = User(name="Resident One", email="resident@example.com", role="resident", apartment="A-1", phone="9999999999")
         resident.set_password("Resident@123")
         db.session.add_all([admin, resident])
         db.session.flush()
