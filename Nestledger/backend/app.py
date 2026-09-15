@@ -165,9 +165,17 @@ for blueprint in (
 from utils.migrations import run_migrations
 
 def seed_admin() -> None:
-    """Create the demo/admin account only when it does not already exist."""
+    """Ensure the configured admin identity exists without running migrations.
+
+    This is safe to run during production startup: it only creates the admin
+    row when the configured email is absent. It never overwrites an existing
+    admin password, so an administrator can change their password without a
+    later Vercel cold start reverting it. A PostgreSQL advisory lock prevents
+    two simultaneous serverless cold starts from racing the unique email key.
+    """
     email = os.getenv("ADMIN_EMAIL", "admin@nestledger.com").strip().lower()
     password = os.getenv("ADMIN_PASSWORD", "Admin@123")
+    lock_fingerprint(f"seed-admin:{email}")
     admin = User.query.filter_by(email=email).first()
 
     if admin is None:
@@ -178,7 +186,15 @@ def seed_admin() -> None:
         )
         admin.set_password(password)
         db.session.add(admin)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # Another serverless instance may have created the same admin after
+            # the initial lookup. Keep the existing record and continue startup.
+            db.session.rollback()
+            admin = User.query.filter_by(email=email).first()
+            if admin is None:
+                raise
 
 
 with app.app_context():
@@ -190,7 +206,9 @@ with app.app_context():
         db.create_all()
     if not is_production and os.getenv("RUN_MIGRATIONS_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
         run_migrations()
-    if not is_production and os.getenv("RUN_ADMIN_SEED_ON_STARTUP", "1").lower() not in {"0", "false", "no"}:
+    if (not is_production and os.getenv("RUN_ADMIN_SEED_ON_STARTUP", "1").lower() not in {"0", "false", "no"}) or (
+        is_production and os.getenv("RUN_ADMIN_SEED_ON_STARTUP", "1").lower() not in {"0", "false", "no"}
+    ):
         seed_admin()
 
 
