@@ -1,4 +1,4 @@
-/* NestLedger Voice Assistant v3
+/* NestLedger Voice Assistant v5
  * Intent-driven voice control using the browser Web Speech API.
  * No network/AI dependency for deterministic app actions.
  */
@@ -306,6 +306,148 @@
   }
   function notify(text){if(typeof global.toast==='function')global.toast(text);speak(text);}
 
+  // Universal form/action layer: resolves commands against the live DOM so new fields/buttons
+  // do not require a new hard-coded voice intent every time the UI changes.
+  const FIELD_ALIASES = {
+    name:['name','full name','resident name','vendor name'], email:['email','email address'], phone:['phone','mobile','contact','contact number'],
+    apartment:['apartment','flat','unit','apartment flat','apartment number'], description:['description','details','message','remarks','notes'],
+    subject:['subject','title','issue','complaint subject'], category:['category','type'], amount:['amount','price','cost','fee','maintenance amount'],
+    month:['month','billing month','billing period'], due:['due date','due','payment due date'], resident:['resident','resident name','user','resident account'],
+    vendor:['vendor','service provider','assigned vendor'], password:['password','passcode'], jobtitle:['job title','service','trade'],
+    status:['status'], tag:['tag','notice type'], quoteamount:['quote amount','quotation amount'], quotenote:['quote note','quotation note','quote remarks']
+  };
+  const ACTION_WORDS=/\b(click|press|tap|select|choose|submit|save|create|add|post|assign|generate|download|open|start|finish|complete|accept|reject|delete|remove|cancel|pay|mark|send|update|change|set|fill|enter|type|write|search|filter|check|uncheck|enable|disable)\b/i;
+  function fieldCandidates(){
+    return [...document.querySelectorAll('input:not([type="hidden"]),textarea,select,[contenteditable="true"],[role="textbox"],[role="combobox"],input[type="checkbox"],input[type="radio"]')];
+  }
+  function semanticFieldText(el){
+    const parts=[el.getAttribute('aria-label'),el.getAttribute('name'),el.id,el.getAttribute('placeholder'),el.getAttribute('autocomplete')];
+    const field=el.closest('.field'); if(field){parts.push(field.querySelector('label')?.textContent,field.innerText);}
+    return normalize(parts.filter(Boolean).join(' '));
+  }
+  function resolveField(label){
+    let key=normalize(label).replace(/\b(the|field|input|box|value|please)\b/g,' ').replace(/\s+/g,' ').trim();
+    if(!key)return null;
+    const aliases=Object.entries(FIELD_ALIASES).flatMap(([k,vals])=>vals.includes(key)||vals.some(v=>scorePhrase(key,v)>=92)?[...vals.map(v=>[k,v])]:[]);
+    const keys=[key,...aliases.map(x=>x[1])];
+    const controls=fieldCandidates();
+    const scored=controls.map(el=>({el,score:Math.max(...keys.map(k=>scorePhrase(semanticFieldText(el),k)))})).sort((a,b)=>b.score-a.score);
+    return scored[0]&&scored[0].score>=62?scored[0].el:null;
+  }
+  function fillAnyField(text){
+    const t=normalize(text);
+    let m=t.match(/^(?:enter|type|write|fill|put|input)\s+(.+?)\s+(?:in|into|under|inside)\s+(?:the\s+)?(.+)$/);
+    if(!m)m=t.match(/^(?:set|change|update)\s+(?:the\s+)?(.+?)\s+(?:to|as|=)\s+(.+)$/);
+    if(!m)m=t.match(/^(?:fill|enter)\s+(?:the\s+)?(.+?)\s+(?:with)\s+(.+)$/);
+    if(!m)return false;
+    const first=m[1].trim(),second=m[2].trim();
+    let label,value;
+    if(/^(?:enter|type|write|fill|put|input)\b/.test(t)){value=first;label=second;}else{label=first;value=second;}
+    const el=resolveField(label);
+    if(!el)return false;
+    if(setFieldValue(el,value)){notify(`Entered ${value} in ${label}.`);return true;}
+    return false;
+  }
+  function chooseField(label,value){
+    const el=resolveField(label);
+    // Apartment selectors are custom theatre-seat controls backed by a hidden input.
+    if(!el){
+      const key=normalize(label);
+      if(/apartment|flat|unit/.test(key)){
+        const code=String(value||'').trim().toUpperCase().replace(/\s+/g,'');
+        const picker=[...document.querySelectorAll('[data-apartment-picker]')].find(root=>root.querySelector(`[data-code=\"${CSS.escape(code)}\"]`));
+        const seat=picker?.querySelector(`[data-code=\"${CSS.escape(code)}\"]`);
+        if(seat&&!seat.disabled){seat.click();return true;}
+      }
+      return false;
+    }
+    if(el.tagName==='SELECT') return setFieldValue(el,value);
+    return setFieldValue(el,value);
+  }
+  function extractValue(text, labels){
+    const label=labels.join('|');
+    const re=new RegExp(`(?:^|\\s)(?:${label})\\s+(?:(?:is|to|as|at|for|with)\\s+)?(.+?)(?=\\s+(?:amount|month|due(?: date)?|description|resident|apartment|flat|unit|email|phone|name|category|status|vendor|title|subject|password)(?:\\s+(?:is|to|as|at|for|with))?\\s+|$)`,'i');
+    const m=text.match(re); return m?m[1].trim():null;
+  }
+  function fillMaintenanceAssignment(text){
+    const t=normalize(text);
+    if(!/\b(assign|create|generate|post)\b.*\bmaintenance\b|\bmaintenance\b.*\b(assign|create|generate|post)\b/i.test(t))return false;
+    if(currentRole()!=='admin')return false;
+    if(!document.getElementById('mbf')){
+      pageGo('payments');
+      setTimeout(()=>{if(global.maintenanceBillModal)global.maintenanceBillModal();setTimeout(()=>fillMaintenanceAssignment(text),650);},450);
+      notify('Opening the maintenance assignment form.');
+      return true;
+    }
+    const apartment=(t.match(/\b(?:apartment|flat|unit)\s+([a-m](?:[-\s]?)[1-7])\b/i)||[])[1];
+    const resident=extractValue(t,['resident','resident name','user']);
+    const amount=extractValue(t,['amount','maintenance amount','fee','cost','price']);
+    const month=extractValue(t,['month','billing month','billing period']);
+    const due=extractValue(t,['due date','due']);
+    const description=extractValue(t,['description','details','remarks','notes']);
+    let changed=false;
+    if(apartment){changed=chooseField('resident',apartment)||changed;}
+    if(resident){changed=chooseField('resident',resident)||changed;}
+    if(amount){changed=setFieldValue(document.getElementById('mbamount'),amount)||changed;}
+    if(month){changed=setFieldValue(document.getElementById('mbmonth'),month)||changed;}
+    if(due){changed=setFieldValue(document.getElementById('mbdue'),due)||changed;}
+    if(description){changed=setFieldValue(document.getElementById('mbdesc'),description)||changed;}
+    if(changed){notify('Maintenance assignment fields have been filled. Say submit maintenance to save it.');return true;}
+    return false;
+  }
+  function submitCurrentForm(){
+    const form=document.querySelector('#modal form, .modal-backdrop form, form');
+    if(!form)return false;
+    const btn=form.querySelector('button[type="submit"],button.primary,input[type="submit"]');
+    if(btn){btn.click();return true;}
+    if(typeof form.requestSubmit==='function'){form.requestSubmit();return true;}
+    return false;
+  }
+  function focusFieldCommand(text){
+    const t=normalize(text).replace(/^(?:focus|focus on|go to|move to|select)\s+(?:the\s+)?/,'');
+    const el=resolveField(t); if(!el)return false; el.focus(); el.scrollIntoView({behavior:'smooth',block:'center'}); notify(`Focused the ${t} field.`); return true;
+  }
+  function checkboxCommand(text){
+    const t=normalize(text);
+    const shouldCheck=/\b(check|enable|turn on|select)\b/.test(t), shouldUncheck=/\b(uncheck|disable|turn off|deselect)\b/.test(t);
+    if(!shouldCheck&&!shouldUncheck)return false;
+    const label=t.replace(/\b(check|uncheck|enable|disable|turn on|turn off|select|deselect)\b/g,'').trim();
+    const controls=[...document.querySelectorAll('input[type="checkbox"],input[type="radio"]')];
+    const hit=controls.map(el=>({el,score:scorePhrase(semanticFieldText(el),label)})).sort((a,b)=>b.score-a.score)[0];
+    if(!hit||hit.score<62)return false;
+    const want=shouldCheck; if(hit.el.checked!==want)hit.el.click(); notify(`${want?'Enabled':'Disabled'} ${label}.`); return true;
+  }
+  function genericDomAction(text){
+    const t=normalize(text);
+    if(fillMaintenanceAssignment(t))return true;
+    if(fillAnyField(t))return true;
+    if(checkboxCommand(t))return true;
+    if(/^(?:focus|focus on|go to|move to|select)\s+/.test(t)&&focusFieldCommand(t))return true;
+    if(/^(?:submit|save|create|post|send|assign|finish|complete)\b/.test(t)){
+      if(submitCurrentForm()){notify('Submitting the current form.');return true;}
+    }
+    if(/^(?:search|find)\b/.test(t)){
+      const m=t.match(/^(?:search|find)(?: for)?\s+(.+)$/); const input=document.querySelector('#listSearch');
+      if(m&&input){setFieldValue(input,m[1]);input.dispatchEvent(new Event('change',{bubbles:true}));notify(`Searching for ${m[1]}.`);return true;}
+    }
+    if(/^filter\b/.test(t)){
+      const m=t.match(/^filter(?: by)?\s+(?:status\s+)?(.+)$/); const sel=document.querySelector('#listStatus');
+      if(m&&sel&&setFieldValue(sel,m[1])){sel.dispatchEvent(new Event('change',{bubbles:true}));notify(`Filtered by ${m[1]}.`);return true;}
+    }
+    // Natural-language button action: “generate receipt”, “download invoice”, “view quotes”, etc.
+    if(ACTION_WORDS.test(t)){
+      const stripped=t.replace(/\b(please|the|button|action)\b/g,' ').replace(/\s+/g,' ').trim();
+      const els=[...document.querySelectorAll('button:not([disabled]),a,[role="button"],input[type="button"],input[type="submit"]')];
+      const hit=els.map(el=>({el,text:normalize(el.innerText||el.value||el.getAttribute('aria-label')||el.title||'')}))
+        .filter(x=>x.text).map(x=>({...x,score:scorePhrase(x.text,stripped)})).sort((a,b)=>b.score-a.score)[0];
+      if(hit&&hit.score>=72){
+        if(/\bpay|payment|checkout|purchase\b/.test(hit.text)){setPendingAction(()=>hit.el.click(),`Payment action found. Say “confirm payment” to continue.`);return true;}
+        hit.el.click();notify(`Activated ${hit.text}.`);return true;
+      }
+    }
+    return false;
+  }
+
   function contextId(transcript){
     const m=normalize(transcript).match(/\b(?:work order|request|job|quote|quotation|complaint|notice|resident|vendor|payment|receipt|notification)\s*(?:number|no|id)?\s*#?\s*(\d+)\b/i);
     return m?Number(m[1]):null;
@@ -376,7 +518,7 @@
       switch(cmd.id){
         case 'start_listening': startListening(); return true;
         case 'stop_listening': stopListening(); return true;
-        case 'help': notify('You can navigate pages, read dues, manage requests and quotations, create records, update jobs, export admin data, and control notifications by voice. Say stop listening to pause continuous voice.'); return true;
+        case 'help': notify('I can navigate every visible section, fill and edit fields, choose dropdowns, search and filter lists, open forms, submit forms, click visible actions, manage maintenance and work orders, handle quotations, receipts, payments, notices, complaints, residents, vendors, expenses and exports. Say stop listening to turn voice off.'); return true;
         case 'logout': confirmAnd(()=>global.logout&&global.logout(),'Log out of NestLedger?'); return true;
         case 'close': case 'cancel': document.querySelector('.modal-backdrop')?.remove(); return true;
         case 'refresh': loadPageSafe(); return true;
@@ -468,6 +610,7 @@
     if(normalize(text)===normalize(previousTranscript) && now-lastHandledAt<1200)return;
     if(fillVoiceField(text)){lastIntent='fill_field';lastHandledAt=now;return;}
     if(/^(?:confirm|yes|confirm payment|confirm action|do it|proceed)$/.test(normalize(text)) && confirmPending()){lastIntent='confirm';lastHandledAt=now;return;}
+    if(genericDomAction(text)){lastIntent='dom_action';lastHandledAt=now;return;}
     if(/^cancel (?:that|action|payment)$/.test(normalize(text))){clearPendingAction();notify('Cancelled.');lastIntent='cancel';lastHandledAt=now;return;}
     if(/^(?:click|press|tap|select)\b/.test(normalize(text)) && clickByVoice(text)){lastIntent='click';lastHandledAt=now;return;}
     const cmd=matchCommand(text);
@@ -487,7 +630,8 @@
       btn.setAttribute('aria-label',listening?'Stop listening':((global.i18n&&global.i18n.t('voiceTapToSpeak'))||'Speak'));
     });
     const status=document.getElementById('chatbotVoiceStatus');
-    if(status){status.hidden=!listening;status.textContent=listeningText;status.setAttribute('aria-live','polite');}
+    if(status){status.hidden=false;status.textContent=listening?listeningText:'Voice off';status.dataset.state=listening?'listening':'off';status.setAttribute('aria-live','polite');}
+    const panel=document.getElementById('akPanel'); if(panel)panel.classList.toggle('voice-active',listening);
   }
 
   function scheduleRestart(){
@@ -586,6 +730,22 @@
     updateUI();
   }
 
+  function mountGlobalMic(){
+    let btn=document.getElementById('akGlobalVoiceMic');
+    if(btn)return;
+    btn=document.createElement('button');
+    btn.id='akGlobalVoiceMic';
+    btn.type='button';
+    btn.className='voice-mic ak-global-voice-mic';
+    btn.innerHTML='<span class="voice-mic-icon"><i data-lucide="mic"></i></span>';
+    btn.setAttribute('aria-label',listening?'Stop listening':((global.i18n&&global.i18n.t('voiceTapToSpeak'))||'Start listening'));
+    btn.setAttribute('title',listening?'Stop listening':'Start listening');
+    btn.onclick=()=>listening?stopListening():startListening();
+    document.body.appendChild(btn);
+    if(global.lucide&&typeof global.lucide.createIcons==='function')global.lucide.createIcons({attrs:{'stroke-width':1.8}});
+    updateUI();
+  }
+
   function refreshLabel(){
     document.querySelectorAll('.voice-mic').forEach(btn=>{
       const label=btn.querySelector('.voice-mic-label');
@@ -598,7 +758,7 @@
   function unmountMicButton(){stopListening();recognition=null;document.querySelectorAll('.voice-mic').forEach(x=>x.remove());}
 
   global.NLVoice={
-    mountInlineMic,unmountMicButton,refreshLabel,startListening,stopListening,
+    mountInlineMic,mountGlobalMic,unmountMicButton,refreshLabel,startListening,stopListening,
     supported:!!SR||hasNativeSpeech(),handleText:handleTranscript,lastTranscript:()=>lastTranscript,lastIntent:()=>lastIntent,
     isListening:()=>listening,getCommands:()=>COMMANDS.map(x=>({id:x.id,roles:x.roles||['resident','vendor','admin'],phrases:[...x.phrases]}))
   };

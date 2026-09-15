@@ -1750,7 +1750,7 @@ html[data-theme="dark"] .chatbot-voice-status{color:#e89a9a}
 html[data-theme="dark"] .bell-count{border-color:#29252c}
 @media(max-width:520px){.bell-count{top:-6px;right:-6px;min-width:18px;height:18px;font-size:10px}}
 /* AK v2 clean assistant */
-.ak-header{padding:13px 15px;background:var(--surface,#f8f7f0);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.ak-head-main{display:flex;align-items:center;gap:10px}.ak-avatar{width:34px;height:34px;border-radius:10px;background:var(--accent2);color:var(--accent);display:grid;place-items:center}.ak-avatar .ak-heroicon{width:19px;height:19px}.ak-head-main strong{display:block;font-size:14px}.ak-head-main small{display:block;font-size:11px;color:var(--muted)}.ak-actions{display:flex;gap:5px}.ak-actions button{border:0;background:transparent;color:var(--muted);width:28px;height:28px;border-radius:8px;font-size:17px;cursor:pointer}.ak-actions button:hover{background:var(--accent2);color:var(--ink)}.ak-suggestions{display:flex;gap:6px;overflow:auto;padding:8px 11px;border-bottom:1px solid var(--line);scrollbar-width:none}.ak-suggestions::-webkit-scrollbar{display:none}.ak-suggestions button{white-space:nowrap;border:1px solid var(--line);background:var(--surface2,#eceee6);color:var(--ink);border-radius:10px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer}.ak-suggestions button:hover{border-color:var(--accent)}.ak-body{flex:1;overflow:auto;padding:13px;background:var(--surface3,#f1f0e9);display:flex;flex-direction:column;gap:8px}.ak-msg{max-width:88%;padding:10px 12px;border-radius:13px;font-size:13px;line-height:1.5}.ak-msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:3px}.ak-msg.assistant{align-self:flex-start;background:var(--surface,#fbfaf5);color:var(--ink);border:1px solid var(--line);border-bottom-left-radius:3px}.ak-footer{padding:10px;background:var(--surface,#f8f7f0);border-top:1px solid var(--line);display:flex;gap:8px}.ak-footer input{flex:1;min-width:0;border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:var(--surface,#fff);color:var(--ink);outline:0}.ak-footer input:focus{border-color:var(--accent)}.ak-footer button{border:0;border-radius:11px;background:var(--accent);color:#fff;font-weight:700;padding:0 14px;cursor:pointer}.ak-footer button:disabled{opacity:.5}.chatbot-voice-status{display:none!important}
+.ak-header{padding:13px 15px;background:var(--surface,#f8f7f0);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.ak-head-main{display:flex;align-items:center;gap:10px}.ak-avatar{width:34px;height:34px;border-radius:10px;background:var(--accent2);color:var(--accent);display:grid;place-items:center}.ak-avatar .ak-heroicon{width:19px;height:19px}.ak-head-main strong{display:block;font-size:14px}.ak-head-main small{display:block;font-size:11px;color:var(--muted)}.ak-actions{display:flex;gap:5px}.ak-actions button{border:0;background:transparent;color:var(--muted);width:28px;height:28px;border-radius:8px;font-size:17px;cursor:pointer}.ak-actions button:hover{background:var(--accent2);color:var(--ink)}.ak-suggestions{display:flex;gap:6px;overflow:auto;padding:8px 11px;border-bottom:1px solid var(--line);scrollbar-width:none}.ak-suggestions::-webkit-scrollbar{display:none}.ak-suggestions button{white-space:nowrap;border:1px solid var(--line);background:var(--surface2,#eceee6);color:var(--ink);border-radius:10px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer}.ak-suggestions button:hover{border-color:var(--accent)}.ak-body{flex:1;overflow:auto;padding:13px;background:var(--surface3,#f1f0e9);display:flex;flex-direction:column;gap:8px}.ak-msg{max-width:88%;padding:10px 12px;border-radius:13px;font-size:13px;line-height:1.5}.ak-msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:3px}.ak-msg.assistant{align-self:flex-start;background:var(--surface,#fbfaf5);color:var(--ink);border:1px solid var(--line);border-bottom-left-radius:3px}.ak-footer{padding:10px;background:var(--surface,#f8f7f0);border-top:1px solid var(--line);display:flex;gap:8px}.ak-footer input{flex:1;min-width:0;border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:var(--surface,#fff);color:var(--ink);outline:0}.ak-footer input:focus{border-color:var(--accent)}.ak-footer button{border:0;border-radius:11px;background:var(--accent);color:#fff;font-weight:700;padding:0 14px;cursor:pointer}.ak-footer button:disabled{opacity:.5}
 html[data-theme="dark"] .ak-header,html[data-theme="dark"] .ak-footer{background:#29252c!important}.chatbot-panel{z-index:80}.chatbot-fab{z-index:79}
 
 /* === Phase 2.7 typography + dark apartment selector polish === */
@@ -1861,3 +1861,38 @@ html,body,button,input,select,textarea,h1,h2,h3,h4,h5,h6,p,span,b,strong,small,a
 
 /* Voice v4: compact AK microphone control */
 .chatbot-voice-mic{position:static!important;width:40px!important;height:40px!important;min-width:40px!important;padding:0!important;border:1px solid var(--line)!important;background:var(--surface2,#eceee6)!important;color:var(--ink)!important;border-radius:11px!important;display:grid!important;place-items:center!important;box-shadow:none!important;cursor:pointer}.chatbot-voice-mic.listening{background:#fff0f0!important;border-color:#e3a2a2!important;color:var(--danger,#c33)!important;animation:pulse 1.1s infinite}.chatbot-voice-mic .voice-mic-label{display:none!important}.chatbot-voice-mic .voice-mic-icon{display:grid;place-items:center}.chatbot-voice-mic svg{width:18px;height:18px}.ak-footer .chatbot-voice-mic{flex:0 0 40px!important}.chatbot-voice-status[hidden]{display:none!important}
+
+
+/* Voice V5 — explicit listening state and broader AK command surface. */
+.chatbot-voice-mic{position:relative!important;transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,color .18s ease,transform .18s ease!important}
+.chatbot-voice-mic.listening{background:#fff!important;color:#d71920!important;border-color:#d71920!important;box-shadow:0 0 0 2px rgba(215,25,32,.16),0 0 14px rgba(215,25,32,.62),inset 0 0 8px rgba(215,25,32,.10)!important;animation:nlVoiceGlow 1.15s ease-in-out infinite!important;transform:scale(1.03)}
+.chatbot-voice-mic.listening .voice-mic-icon{filter:drop-shadow(0 0 4px rgba(215,25,32,.75))}
+@keyframes nlVoiceGlow{0%,100%{box-shadow:0 0 0 2px rgba(215,25,32,.12),0 0 9px rgba(215,25,32,.42),inset 0 0 6px rgba(215,25,32,.08)}50%{box-shadow:0 0 0 3px rgba(215,25,32,.20),0 0 20px rgba(215,25,32,.78),inset 0 0 10px rgba(215,25,32,.14)}}
+.ak-footer{display:block!important}
+.ak-input-row{display:flex;gap:8px;align-items:center;width:100%}
+.ak-input-row #akInput{flex:1;min-width:0}
+.chatbot-voice-status{display:block!important;font-size:10px!important;line-height:1.2!important;margin-top:6px!important;padding:4px 8px!important;border-radius:8px!important;color:var(--muted)!important;background:var(--surface2,#eceee6)!important;border:1px solid var(--line)!important}
+.chatbot-voice-status[data-state="listening"]{color:#c5161d!important;border-color:#e4a0a0!important;background:#fff3f3!important;font-weight:700!important}
+.chatbot-voice-status[data-state="off"]{opacity:.72}
+html[data-theme="dark"] .chatbot-voice-status[data-state="listening"]{color:#ff7379!important;border-color:#7e3b40!important;background:#321f22!important}
+html[data-theme="dark"] .chatbot-voice-mic.listening{background:#251c1e!important;color:#ff6f75!important;border-color:#ff4d55!important}
+
+
+/* Voice V5.1 — global AK microphone, available to resident, vendor and admin. */
+.ak-global-voice-mic{
+  position:fixed!important;right:88px!important;bottom:22px!important;z-index:43!important;
+  width:50px!important;height:50px!important;min-width:50px!important;padding:0!important;
+  display:grid!important;place-items:center!important;border-radius:50%!important;
+  border:1px solid rgba(255,255,255,.18)!important;background:var(--ink)!important;color:#fff!important;
+  box-shadow:0 12px 30px rgba(30,42,35,.22)!important;cursor:pointer;
+}
+.ak-global-voice-mic .voice-mic-icon{display:grid;place-items:center}
+.ak-global-voice-mic svg{width:20px;height:20px}
+.ak-global-voice-mic.listening{
+  background:#fff!important;color:#d71920!important;border-color:#d71920!important;
+  box-shadow:0 0 0 3px rgba(215,25,32,.15),0 0 20px rgba(215,25,32,.72),0 12px 30px rgba(215,25,32,.22)!important;
+  animation:nlVoiceGlow 1.1s ease-in-out infinite!important;
+}
+html[data-theme="dark"] .ak-global-voice-mic{background:#d9e1d6!important;color:#24372d!important}
+html[data-theme="dark"] .ak-global-voice-mic.listening{background:#251c1e!important;color:#ff6f75!important;border-color:#ff4d55!important}
+@media(max-width:520px){.ak-global-voice-mic{right:78px!important;bottom:18px!important;width:48px!important;height:48px!important;min-width:48px!important}}
