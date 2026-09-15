@@ -163,6 +163,7 @@ for blueprint in (
 
 
 from utils.migrations import run_migrations
+from utils.concurrency import lock_fingerprint
 
 def seed_admin() -> None:
     """Ensure the configured admin identity exists without running migrations.
