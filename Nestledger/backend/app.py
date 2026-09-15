@@ -31,7 +31,7 @@ FRONTEND_DIR = BASE_DIR.parent / "frontend"
 
 # Explicit deployment marker. Change this value for every packaged release so /health
 # can be used to verify that Vercel is serving the newly deployed backend code.
-BUILD_ID = "BI-HEALTH-CHECK-2026-09-15-01"
+BUILD_ID = "PHASE-2-2026-09-15-01"
 
 load_dotenv(BASE_DIR / ".env")
 

@@ -49,7 +49,7 @@
         }
         if (!response.ok) {
           const message = data?.error?.message || data?.error || data?.message || `Request failed (${response.status})`;
-          const error = new Error(message); error.status = response.status; error.code = data?.error?.code; throw error;
+          const error = new Error(message); error.status = response.status; error.code = data?.error?.code; error.requestId = data?.error?.request_id || response.headers.get('X-Request-ID') || null; throw error;
         }
         if (isGet && guardPageSeq != null && window.__NLPageLoadSeq != null && guardPageSeq !== window.__NLPageLoadSeq) {
           // A stale navigation response is intentionally ignored by the page
@@ -104,7 +104,7 @@
       if (!response.ok) {
         let data = {}; try { data = await response.json(); } catch {}
         const error = new Error(data?.error?.message || data?.error || `Download failed (${response.status})`);
-        error.status = response.status; error.code = data?.error?.code; throw error;
+        error.status = response.status; error.code = data?.error?.code; error.requestId = data?.error?.request_id || response.headers.get('X-Request-ID') || null; throw error;
       }
       return response;
     } catch (error) {

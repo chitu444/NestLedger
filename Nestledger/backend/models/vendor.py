@@ -16,7 +16,7 @@ class Vendor(db.Model):
     contract = db.Column(db.String(100))
     status = db.Column(db.String(30), default="active", index=True)
 
-    user = db.relationship("User", backref="vendor_profile", uselist=False, lazy="joined")
+    user = db.relationship("User", back_populates="vendor_profile", uselist=False, lazy="joined")
 
     def to_dict(self):
         # Cache rating aggregates once per request; vendor tables otherwise

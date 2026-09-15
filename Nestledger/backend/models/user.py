@@ -14,6 +14,12 @@ class User(db.Model):
     phone = db.Column(db.String(30))
     apartment = db.Column(db.String(60))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    vendor_profile = db.relationship(
+        "Vendor",
+        back_populates="user",
+        uselist=False,
+        lazy="joined",
+    )
 
     def __init__(
         self,
@@ -51,13 +57,9 @@ class User(db.Model):
         # Vendors get their actual trade/job title in the session payload so the
         # profile chip can show e.g. Plumber instead of the generic Vendor label.
         if self.role == "vendor":
-            # Do not rely on the generated backref here. Older database/model
-            # states can expose vendor_profile as an InstrumentedList, while a
-            # user is intended to have exactly one vendor profile. Querying by
-            # the unique user_id keeps login serialization robust across those
-            # states and avoids turning a successful login into a 500.
-            from models.vendor import Vendor
-            vendor = Vendor.query.filter_by(user_id=self.id).first()
+            # Vendor.user is a joined one-to-one relationship, so session/login
+            # serialization does not issue a separate query for every vendor.
+            vendor = getattr(self, "vendor_profile", None)
             if vendor is not None:
                 data["job_title"] = vendor.service
         return data
