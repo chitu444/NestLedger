@@ -1858,3 +1858,6 @@ html,body,button,input,select,textarea,h1,h2,h3,h4,h5,h6,p,span,b,strong,small,a
 @media (max-width: 360px){
   .nav{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 }
+
+/* Voice v4: compact AK microphone control */
+.chatbot-voice-mic{position:static!important;width:40px!important;height:40px!important;min-width:40px!important;padding:0!important;border:1px solid var(--line)!important;background:var(--surface2,#eceee6)!important;color:var(--ink)!important;border-radius:11px!important;display:grid!important;place-items:center!important;box-shadow:none!important;cursor:pointer}.chatbot-voice-mic.listening{background:#fff0f0!important;border-color:#e3a2a2!important;color:var(--danger,#c33)!important;animation:pulse 1.1s infinite}.chatbot-voice-mic .voice-mic-label{display:none!important}.chatbot-voice-mic .voice-mic-icon{display:grid;place-items:center}.chatbot-voice-mic svg{width:18px;height:18px}.ak-footer .chatbot-voice-mic{flex:0 0 40px!important}.chatbot-voice-status[hidden]{display:none!important}

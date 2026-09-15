@@ -6,6 +6,14 @@
   'use strict';
 
   const SR = global.SpeechRecognition || global.webkitSpeechRecognition;
+  // Android/Capacitor uses a native recognizer when available; desktop/mobile web
+  // falls back to the Web Speech API. Voice is NEVER started automatically.
+  const NativeSR = global.Capacitor?.Plugins?.SpeechRecognition || null;
+  let nativeListening = false;
+  let nativeWanted = false;
+  let nativeListenersReady = false;
+  let nativeLastTranscript = '';
+  let pendingVoiceAction = null;
   let recognition = null;
   let listening = false;
   let restarting = false;
@@ -191,6 +199,104 @@
     return bestScore>=58?best:null;
   }
 
+  function hasNativeSpeech(){ return !!(NativeSR && typeof NativeSR.start==='function'); }
+  function fieldText(el){
+    return normalize(el?.getAttribute('aria-label')||el?.name||el?.id||el?.placeholder||el?.closest('.field')?.querySelector('label')?.innerText||'');
+  }
+  function findField(label){
+    const key=normalize(label).replace(/\b(field|input|box)\b/g,'').trim();
+    if(!key)return null;
+    const controls=[...document.querySelectorAll('input:not([type="hidden"]),textarea,select,[contenteditable="true"]')];
+    const scored=controls.map(el=>({el,score:scorePhrase(fieldText(el),key)})).filter(x=>x.score>=65).sort((a,b)=>b.score-a.score);
+    return scored[0]?.el||null;
+  }
+  function setFieldValue(el,value){
+    if(!el)return false;
+    value=String(value||'').trim();
+    if(el.tagName==='SELECT'){
+      const opts=[...el.options];
+      const hit=opts.find(o=>scorePhrase(o.textContent||o.value,value)>=72);
+      if(hit)el.value=hit.value;
+      else return false;
+    }else if(el.isContentEditable){el.textContent=value;el.dispatchEvent(new InputEvent('input',{bubbles:true,data:value,inputType:'insertText'}));}
+    else{
+      const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value')?.set;
+      if(setter)setter.call(el,value);else el.value=value;
+      el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+    el.focus();
+    return true;
+  }
+  function fillVoiceField(text){
+    const t=normalize(text);
+    let m=t.match(/^(?:enter|type|write|fill|put)\s+(.+?)\s+(?:in|into|under|for)\s+(?:the\s+)?(.+)$/);
+    if(!m)m=t.match(/^(?:set|change|update)\s+(?:the\s+)?(.+?)\s+(?:to|as)\s+(.+)$/);
+    if(!m)return false;
+    let value,label;
+    if(/^(?:enter|type|write|fill|put)\b/.test(t)){value=m[1];label=m[2];}else{label=m[1];value=m[2];}
+    const el=findField(label);
+    if(!el)return false;
+    if(setFieldValue(el,value)){notify(`Entered ${value} in ${label}.`);return true;}
+    return false;
+  }
+  function clickByVoice(text){
+    const t=normalize(text).replace(/^(?:click|press|tap|select)\s+(?:the\s+)?/,'').trim();
+    if(!t)return false;
+    const els=[...document.querySelectorAll('button:not([disabled]),a,[role="button"],input[type="button"],input[type="submit"]')];
+    const candidates=els.map(el=>({el,text:normalize(el.innerText||el.value||el.getAttribute('aria-label')||el.title||'')})).filter(x=>x.text).map(x=>({...x,score:scorePhrase(x.text,t)})).filter(x=>x.score>=70).sort((a,b)=>b.score-a.score);
+    if(!candidates.length)return false;
+    const chosen=candidates[0].el;
+    const chosenText=candidates[0].text;
+    if(/\bpay\b|payment|purchase|checkout/i.test(chosenText)){
+      setPendingAction(()=>chosen.click(),`Payment button found: “${chosenText}”. Say “confirm payment” to continue.`);
+      return true;
+    }
+    chosen.click();
+    return true;
+  }
+  function setPendingAction(fn,message){ pendingVoiceAction=fn; notify(message); }
+  function clearPendingAction(){ pendingVoiceAction=null; }
+  function confirmPending(){ if(!pendingVoiceAction)return false; const fn=pendingVoiceAction;clearPendingAction();Promise.resolve(fn()).catch(()=>{});return true; }
+  async function setupNativeSpeech(){
+    if(!hasNativeSpeech() || nativeListenersReady)return;
+    nativeListenersReady=true;
+    try{
+      await NativeSR.addListener('partialResults',e=>{
+        const text=String(e?.matches?.[0]||'').trim();
+        if(text) nativeLastTranscript=text;
+        const status=document.getElementById('chatbotVoiceStatus');
+        if(status&&text){status.hidden=false;status.textContent=`Heard: ${text}`;}
+      });
+      await NativeSR.addListener('listeningState',e=>{
+        const active=!!e?.status;
+        if(!active && nativeLastTranscript){
+          const text=nativeLastTranscript; nativeLastTranscript='';
+          if(nativeWanted) handleTranscript(text);
+        }
+        nativeListening=active;
+        listening=nativeListening || nativeWanted;
+        updateUI();
+        if(!active && nativeWanted){setTimeout(()=>{if(nativeWanted)startNativeListening();},220);}
+      });
+    }catch(e){ console.warn('Native speech listeners unavailable',e); }
+  }
+  async function startNativeListening(){
+    nativeWanted=true;
+    await setupNativeSpeech();
+    try{
+      const perm=await NativeSR.checkPermissions?.();
+      if(perm?.recordAudio==='denied')await NativeSR.requestPermissions();
+      const lang=(global.i18n&&global.i18n.SPEECH_LOCALE&&global.i18n.SPEECH_LOCALE[global.i18n.getLanguage()])||'en-IN';
+      await NativeSR.start({language:lang,maxResults:5,partialResults:true,popup:false});
+      nativeListening=true;listening=true;updateUI();
+      return true;
+    }catch(e){ nativeListening=false;listening=false;updateUI();notify(`Voice could not start. ${e?.message||'Please allow microphone access.'}`);return false; }
+  }
+  async function stopNativeListening(){
+    nativeWanted=false; nativeLastTranscript='';
+    try{if(hasNativeSpeech()&&typeof NativeSR.stop==='function')await NativeSR.stop();}catch{}
+    nativeListening=false;listening=false;updateUI();
+  }
   function pageGo(page){ if(typeof global.go==='function'){global.go(page);return true;} return false; }
 
   function speak(text){
@@ -260,6 +366,10 @@
   function execute(cmd, transcript){
     if(!cmd||!allowed(cmd)||commandBusy)return false;
     const t=normalize(transcript), id=contextId(transcript);
+    if(fillVoiceField(transcript)) return true;
+    if(/^(?:confirm|yes|confirm payment|confirm action|do it|proceed)$/.test(t) && confirmPending()) return true;
+    if(/^cancel (?:that|action|payment)$/.test(t)){clearPendingAction();notify('Cancelled.');return true;}
+    if(/^(?:click|press|tap|select)\b/.test(t) && clickByVoice(t)) return true;
     commandBusy=true;
     const finish=()=>{commandBusy=false;};
     try{
@@ -279,8 +389,8 @@
         case 'payment_history': pageGo('payments'); return true;
         case 'unpaid_bills': pageGo('payments'); notify('Opening Payments. I will not start a payment automatically; choose the bill you want to pay.'); return true;
         case 'paid_bills': pageGo('payments'); return true;
-        case 'latest_receipt': pageGo('receipts'); setTimeout(()=>clickButtonByText(['download receipt','receipt','download'],'receipts'),450); return true;
-        case 'pay_bill': confirmAnd(()=>{pageGo('payments');setTimeout(()=>{if(!clickButtonByText(['pay maintenance','pay bill','pay ₹','pay']))notify('Open Payments and choose the bill you want to pay.');},450)},'Open the payment screen and prepare your maintenance payment?'); return true;
+        case 'latest_receipt': pageGo('receipts'); setTimeout(()=>{if(!clickButtonByText(['download receipt','generate receipt pdf','receipt','download'],'receipts'))notify('I could not find a receipt button on the Receipts page.');},500); return true;
+        case 'pay_bill': setPendingAction(async()=>{pageGo('payments');setTimeout(()=>{if(!clickButtonByText(['pay maintenance','pay bill','pay ₹','pay']))notify('I could not find a payment button.');},500);},'Payment action ready. Say “confirm payment” to continue, or “cancel payment”.'); return true;
         case 'new_complaint': pageGo('complaints'); setTimeout(()=>global.complaintModal&&global.complaintModal(),450); return true;
         case 'new_workorder': pageGo('workorders'); setTimeout(()=>global.workOrderModal&&global.workOrderModal(),450); return true;
         case 'cancel_workorder': if(id&&global.cancelWorkOrder){global.cancelWorkOrder(id);}else notify('Please say the work order number you want to cancel.'); return true;
@@ -356,11 +466,14 @@
     const now=Date.now();
     // Recognition engines can emit the same final phrase more than once.
     if(normalize(text)===normalize(previousTranscript) && now-lastHandledAt<1200)return;
+    if(fillVoiceField(text)){lastIntent='fill_field';lastHandledAt=now;return;}
+    if(/^(?:confirm|yes|confirm payment|confirm action|do it|proceed)$/.test(normalize(text)) && confirmPending()){lastIntent='confirm';lastHandledAt=now;return;}
+    if(/^cancel (?:that|action|payment)$/.test(normalize(text))){clearPendingAction();notify('Cancelled.');lastIntent='cancel';lastHandledAt=now;return;}
+    if(/^(?:click|press|tap|select)\b/.test(normalize(text)) && clickByVoice(text)){lastIntent='click';lastHandledAt=now;return;}
     const cmd=matchCommand(text);
     if(cmd&&execute(cmd,text)){lastIntent=cmd.id;lastHandledAt=now;return;}
-    if(global.NLChatbot&&typeof global.NLChatbot.sendMessage==='function'){
-      global.NLChatbot.open&&global.NLChatbot.open();global.NLChatbot.sendMessage(text);
-    }else notify(`I heard: ${text}`);
+    // Voice control is deterministic and never sends voice transcripts to the AI/chat API.
+    notify(`I heard “${text}”, but I do not have a matching NestLedger command yet.`);
     lastHandledAt=now;
   }
 
@@ -439,13 +552,15 @@
     return recognition;
   }
 
-  function stopListening(){
+  async function stopListening(){
     listening=false;restarting=false;clearTimeout(restartTimer);
+    if(hasNativeSpeech()){await stopNativeListening();}
     if(recognition){try{recognition.stop();}catch{try{recognition.abort();}catch{}}}
     if(global.speechSynthesis)global.speechSynthesis.cancel();updateUI();
   }
 
-  function startListening(){
+  async function startListening(){
+    if(hasNativeSpeech()) return startNativeListening();
     if(!SR){
       notify((global.i18n&&global.i18n.t('voiceUnsupported'))||'Voice recognition is not supported in this browser. Try Chrome or Edge for voice navigation.');
       return false;
@@ -453,19 +568,8 @@
     if(listening||restarting)return true;
     const r=recognitionInstance();
     r.lang=(global.i18n&&global.i18n.SPEECH_LOCALE&&global.i18n.SPEECH_LOCALE[global.i18n.getLanguage()])||'en-IN';
-    try{
-      if(global.speechSynthesis)global.speechSynthesis.cancel();
-      // Do not claim “Listening…” until the recognition engine actually fires
-      // onstart. This prevents a false listening state when the browser rejects
-      // the microphone/service request.
-      restarting=false;
-      r.start();
-      return true;
-    }catch(e){
-      listening=false;restarting=false;updateUI();
-      notify((global.i18n&&global.i18n.t('voiceTryAgain'))||'Please try again.');
-      return false;
-    }
+    try{ if(global.speechSynthesis)global.speechSynthesis.cancel(); restarting=false;r.start();return true; }
+    catch(e){listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceTryAgain'))||'Please try again.');return false;}
   }
 
   function mountInlineMic(container){
@@ -495,7 +599,7 @@
 
   global.NLVoice={
     mountInlineMic,unmountMicButton,refreshLabel,startListening,stopListening,
-    supported:!!SR,lastTranscript:()=>lastTranscript,lastIntent:()=>lastIntent,
+    supported:!!SR||hasNativeSpeech(),handleText:handleTranscript,lastTranscript:()=>lastTranscript,lastIntent:()=>lastIntent,
     isListening:()=>listening,getCommands:()=>COMMANDS.map(x=>({id:x.id,roles:x.roles||['resident','vendor','admin'],phrases:[...x.phrases]}))
   };
 })(window);
