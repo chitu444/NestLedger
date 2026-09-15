@@ -287,6 +287,11 @@ def add_resident():
     ok, err = valid_apartment(apartment, required=True)
     if not ok:
         return {"error": err}, 400
+    # Serialize identical account creations on PostgreSQL. The database unique
+    # index remains the final authority, while this prevents two admins/retries
+    # from both passing the preflight checks at the same time.
+    lock_fingerprint(f"resident-create:{apartment}")
+    lock_fingerprint(f"user-email:{email}")
     if User.query.filter(User.role == "resident", User.apartment == apartment).first():
         return {"error": f"Apartment {apartment} is already occupied"}, 409
     if User.query.filter_by(email=email).first():
@@ -339,6 +344,7 @@ def add_vendor():
         return {"error": err}, 400
     if job_title not in VENDOR_JOB_TITLES:
         return {"error": "Job title must be one of: Plumber, Electrician, Carpenter, Painter, Cleaner"}, 400
+    lock_fingerprint(f"vendor-create:{email}")
     if User.query.filter_by(email=email).first():
         return {"error": "Email already registered"}, 409
 

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from utils.auth import current_user
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from models.db import db
 from models.notification import notify
@@ -432,6 +432,8 @@ def submit_quote(wid):
     if profile is None:
         return {"error": "No active vendor profile found for this account"}, 400
 
+    # Lock the parent order before reading/updating its pending quote. This
+    # makes repeated quote POSTs deterministic under concurrent requests.
     order = db.session.get(WorkOrder, wid, with_for_update=True)
     if order is None:
         return {"error": "Work order not found"}, 404

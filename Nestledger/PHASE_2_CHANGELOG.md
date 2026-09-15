@@ -15,3 +15,12 @@ Build: `PHASE-2-2026-09-15-01`
 - Razorpay flow was not altered.
 - Apartment A–M × 7 rules were not changed.
 - BI logic was not changed now that the deployed BI endpoint is confirmed working.
+
+
+## Phase 2.1 — reliability and query efficiency
+
+- Added PostgreSQL advisory locks around admin resident/vendor account creation to close preflight race windows.
+- Kept work-order quote operations serialized by the parent work-order row lock and eager-loaded rating residents during work-order serialization to avoid per-rating lazy queries.
+- Limited resident dashboard billing history to the 20 most recent bills; the dedicated Payments page remains the full history view.
+- Collapsed admin dashboard role and work-order counts into grouped aggregate queries instead of separate count queries.
+- Build marker updated to `PHASE-2.1-2026-09-15-01`.

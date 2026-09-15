@@ -2,6 +2,7 @@ from datetime import datetime
 
 from flask import Blueprint
 from flask_jwt_extended import jwt_required
+from sqlalchemy import func
 from utils.auth import current_user
 
 from models.notice import Notice
@@ -28,7 +29,9 @@ def dashboard():
         return {"error": "User not found"}, 404
 
     if user.role == "resident":
-        bills = MaintenanceBill.query.filter_by(user_id=user.id).order_by(MaintenanceBill.id.desc()).all()
+        # The dashboard is a summary surface; keep the full billing history on
+        # the dedicated Payments page instead of loading an unbounded list here.
+        bills = MaintenanceBill.query.filter_by(user_id=user.id).order_by(MaintenanceBill.id.desc()).limit(20).all()
         payments = (
             Payment.query.filter_by(user_id=user.id, status="paid")
             .order_by(Payment.id.desc())
@@ -133,16 +136,19 @@ def dashboard():
         recent_activity.append({"kind": "workorder", "title": item.title, "detail": f"{item.apartment or 'Community'} · {item.status}", "created_at": item.created_at.isoformat() if item.created_at else None})
     recent_activity.sort(key=lambda x: x.get("created_at") or "", reverse=True)
 
+    role_counts = {role: int(count) for role, count in db.session.query(User.role, func.count(User.id)).group_by(User.role).all()}
+    order_counts = {status: int(count) for status, count in db.session.query(WorkOrder.status, func.count(WorkOrder.id)).group_by(WorkOrder.status).all()}
+
     return {
         "role": "admin",
         "user": user.to_dict(),
-        "residents": User.query.filter_by(role="resident").count(),
-        "vendors": User.query.filter_by(role="vendor").count(),
+        "residents": role_counts.get("resident", 0),
+        "vendors": role_counts.get("vendor", 0),
         "collection": total_collected,
         "expenses": total_expenses,
         "open_complaints": sum(v for k, v in complaint_breakdown.items() if k != "closed"),
-        "work_orders": WorkOrder.query.count(),
-        "open_work_orders": open_work_orders_count(),
+        "work_orders": sum(order_counts.values()),
+        "open_work_orders": order_counts.get("open", 0),
         "complaint_breakdown": {
             status: int(complaint_breakdown.get(status, 0))
             for status in ("open", "in_progress", "resolved", "closed")
