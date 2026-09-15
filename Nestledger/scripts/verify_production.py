@@ -12,9 +12,10 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import http.cookiejar
 
 
-def request(base, path, method="GET", payload=None, token=None):
+def request(base, path, method="GET", payload=None, token=None, opener=None, idempotency_key=None):
     data = None if payload is None else json.dumps(payload).encode()
     req = urllib.request.Request(base.rstrip("/") + path, data=data, method=method)
     req.add_header("Accept", "application/json")
@@ -22,7 +23,9 @@ def request(base, path, method="GET", payload=None, token=None):
         req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
-    return urllib.request.urlopen(req, timeout=15)
+    if idempotency_key:
+        req.add_header("Idempotency-Key", idempotency_key)
+    return (opener or urllib.request).open(req, timeout=15)
 
 
 def check(name, fn, failures):
@@ -41,6 +44,8 @@ def main():
     base = sys.argv[1].rstrip("/")
     failures = []
     token_box = {}
+    cookie_jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
 
     def health():
         with request(base, "/api/health") as r:
@@ -49,7 +54,7 @@ def main():
                 raise RuntimeError(body)
             migrations = body.get("migrations") or {}
             if migrations.get("pending", 0):
-                raise RuntimeError(f"pending migrations: {migrations.get("pending")}")
+                raise RuntimeError(f"pending migrations: {migrations.get('pending')}")
             return f"build {body.get("build", "unknown")} · migrations {migrations.get("current")}/{migrations.get("latest")}"
 
     def bi_unauthenticated():
@@ -83,23 +88,21 @@ def main():
     password = os.getenv("ADMIN_PASSWORD", "")
     if email and password:
         def login():
-            with request(base, "/api/auth/login", "POST", {"email": email, "password": password}) as r:
+            with request(base, "/api/auth/login", "POST", {"email": email, "password": password}, opener=opener) as r:
                 body = json.load(r)
-                token_box["token"] = body.get("token")
-                if not token_box["token"]:
-                    raise RuntimeError("login returned no token")
-                return "admin login succeeded"
+                if not body.get("user"):
+                    raise RuntimeError("login returned no user")
+                return "admin cookie login succeeded"
 
         def export():
-            with request(base, "/api/admin/export/residents?format=csv", token=token_box["token"]) as r:
+            with request(base, "/api/admin/export/residents?format=csv", opener=opener) as r:
                 disposition = r.headers.get("Content-Disposition", "")
                 if r.status != 200 or "attachment" not in disposition:
                     raise RuntimeError(f"HTTP {r.status}, invalid attachment response")
                 return "resident CSV export succeeded"
 
         check("admin authentication", login, failures)
-        if token_box.get("token"):
-            check("admin resident CSV export", export, failures)
+        check("admin resident CSV export", export, failures)
     else:
         print("[SKIP] admin auth/export smoke test (set ADMIN_EMAIL + ADMIN_PASSWORD to enable)")
 
