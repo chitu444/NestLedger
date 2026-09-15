@@ -86,7 +86,7 @@ body{background:var(--bg)}
 .table{min-width:640px}.panel:has(.table){overflow:auto}
 .bell-btn{height:42px;width:42px;padding:0;display:grid;place-items:center}
 .notif-panel{top:52px;box-shadow:var(--shadow-lg)}
-.chatbot-fab{bottom:78px}.voice-mic{bottom:20px}
+.chatbot-fab{bottom:78px}
 .empty{min-height:110px;display:grid;place-items:center}
 .modal{box-shadow:var(--shadow-lg)}
 @media(max-width:1180px){.cards{grid-template-columns:repeat(2,1fr)}.layout,.dashboard-grid{grid-template-columns:1fr}.attention-grid{grid-template-columns:repeat(2,1fr)}}
@@ -1876,23 +1876,3 @@ html,body,button,input,select,textarea,h1,h2,h3,h4,h5,h6,p,span,b,strong,small,a
 .chatbot-voice-status[data-state="off"]{opacity:.72}
 html[data-theme="dark"] .chatbot-voice-status[data-state="listening"]{color:#ff7379!important;border-color:#7e3b40!important;background:#321f22!important}
 html[data-theme="dark"] .chatbot-voice-mic.listening{background:#251c1e!important;color:#ff6f75!important;border-color:#ff4d55!important}
-
-
-/* Voice V5.1 — global AK microphone, available to resident, vendor and admin. */
-.ak-global-voice-mic{
-  position:fixed!important;right:88px!important;bottom:22px!important;z-index:43!important;
-  width:50px!important;height:50px!important;min-width:50px!important;padding:0!important;
-  display:grid!important;place-items:center!important;border-radius:50%!important;
-  border:1px solid rgba(255,255,255,.18)!important;background:var(--ink)!important;color:#fff!important;
-  box-shadow:0 12px 30px rgba(30,42,35,.22)!important;cursor:pointer;
-}
-.ak-global-voice-mic .voice-mic-icon{display:grid;place-items:center}
-.ak-global-voice-mic svg{width:20px;height:20px}
-.ak-global-voice-mic.listening{
-  background:#fff!important;color:#d71920!important;border-color:#d71920!important;
-  box-shadow:0 0 0 3px rgba(215,25,32,.15),0 0 20px rgba(215,25,32,.72),0 12px 30px rgba(215,25,32,.22)!important;
-  animation:nlVoiceGlow 1.1s ease-in-out infinite!important;
-}
-html[data-theme="dark"] .ak-global-voice-mic{background:#d9e1d6!important;color:#24372d!important}
-html[data-theme="dark"] .ak-global-voice-mic.listening{background:#251c1e!important;color:#ff6f75!important;border-color:#ff4d55!important}
-@media(max-width:520px){.ak-global-voice-mic{right:78px!important;bottom:18px!important;width:48px!important;height:48px!important;min-width:48px!important}}

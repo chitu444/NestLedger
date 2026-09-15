@@ -12,6 +12,8 @@
   let nativeListening = false;
   let nativeWanted = false;
   let nativeListenersReady = false;
+  let nativeStarting = false;
+  let nativeRestartTimer = null;
   let nativeLastTranscript = '';
   let pendingVoiceAction = null;
   let recognition = null;
@@ -257,44 +259,102 @@
   function setPendingAction(fn,message){ pendingVoiceAction=fn; notify(message); }
   function clearPendingAction(){ pendingVoiceAction=null; }
   function confirmPending(){ if(!pendingVoiceAction)return false; const fn=pendingVoiceAction;clearPendingAction();Promise.resolve(fn()).catch(()=>{});return true; }
+  function setVoiceStatus(text){
+    const status=document.getElementById('chatbotVoiceStatus');
+    if(status){status.hidden=false;status.textContent=text;status.dataset.state=listening?'listening':'off';}
+  }
+  function clearNativeRestart(){clearTimeout(nativeRestartTimer);nativeRestartTimer=null;}
   async function setupNativeSpeech(){
     if(!hasNativeSpeech() || nativeListenersReady)return;
     nativeListenersReady=true;
     try{
       await NativeSR.addListener('partialResults',e=>{
         const text=String(e?.matches?.[0]||'').trim();
-        if(text) nativeLastTranscript=text;
-        const status=document.getElementById('chatbotVoiceStatus');
-        if(status&&text){status.hidden=false;status.textContent=`Heard: ${text}`;}
+        if(text){nativeLastTranscript=text;setVoiceStatus(`Heard: ${text}`);}
       });
-      await NativeSR.addListener('listeningState',e=>{
-        const active=!!e?.status;
-        if(!active && nativeLastTranscript){
-          const text=nativeLastTranscript; nativeLastTranscript='';
-          if(nativeWanted) handleTranscript(text);
-        }
-        nativeListening=active;
-        listening=nativeListening || nativeWanted;
-        updateUI();
-        if(!active && nativeWanted){setTimeout(()=>{if(nativeWanted)startNativeListening();},220);}
-      });
+      if(typeof NativeSR.addListener==='function'){
+        await NativeSR.addListener('segmentResults',e=>{
+          const text=String(e?.matches?.[0]||e?.text||'').trim();
+          if(text){nativeLastTranscript='';handleTranscript(text);}
+        });
+        await NativeSR.addListener('listeningState',e=>{
+          const state=String(e?.state||'').toLowerCase();
+          const active=state==='started'||state==='startinglistening'||e?.status==='started';
+          const stopped=state==='stopped'||state==='stoppinglistening'||e?.status==='stopped';
+          if(active){
+            nativeListening=true; listening=true; nativeStarting=false; clearNativeRestart(); updateUI(); return;
+          }
+          if(stopped){
+            nativeListening=false; nativeStarting=false;
+            const text=nativeLastTranscript.trim(); nativeLastTranscript='';
+            if(text && nativeWanted)handleTranscript(text);
+            if(nativeWanted){setVoiceStatus('Listening…');scheduleNativeRestart();}
+            else{listening=false;updateUI();}
+          }
+        });
+        await NativeSR.addListener('error',e=>{
+          // Native recognizers can report segment-level errors while the session is still
+          // recoverable. Do not toast on every error; wait for the ready event/restart path.
+          console.warn('[NestLedger Voice] native recognition error',e);
+          nativeListening=false; nativeStarting=false;
+          if(nativeWanted){setVoiceStatus('Listening…');scheduleNativeRestart();}
+        });
+        await NativeSR.addListener('readyForNextSession',()=>{
+          nativeStarting=false;
+          if(nativeWanted)scheduleNativeRestart(80);
+        });
+      }
     }catch(e){ console.warn('Native speech listeners unavailable',e); }
   }
-  async function startNativeListening(){
-    nativeWanted=true;
+  function scheduleNativeRestart(delay=120){
+    if(!nativeWanted||nativeStarting)return;
+    clearNativeRestart();
+    nativeRestartTimer=setTimeout(async()=>{
+      nativeRestartTimer=null;
+      if(!nativeWanted||nativeStarting)return;
+      await startNativeListening(true);
+    },delay);
+  }
+  async function startNativeListening(isRestart=false){
+    if(!hasNativeSpeech())return false;
+    if(nativeStarting)return true;
     await setupNativeSpeech();
+    nativeWanted=true;
+    // Never call start() twice on an already-running native recognizer.
     try{
+      if(typeof NativeSR.isListening==='function'){
+        const state=await NativeSR.isListening();
+        if(state?.isListening||state?.listening||state===true){
+          nativeListening=true; listening=true; updateUI(); return true;
+        }
+      }
       const perm=await NativeSR.checkPermissions?.();
-      if(perm?.recordAudio==='denied')await NativeSR.requestPermissions();
+      if(perm?.recordAudio==='denied'){
+        const granted=await NativeSR.requestPermissions();
+        if(granted?.recordAudio==='denied'){nativeWanted=false;listening=false;updateUI();notify((global.i18n&&global.i18n.t('voiceMicPermission'))||'Microphone access is blocked. Please allow it and try again.');return false;}
+      }
+      nativeStarting=true; listening=true; updateUI();
       const lang=(global.i18n&&global.i18n.SPEECH_LOCALE&&global.i18n.SPEECH_LOCALE[global.i18n.getLanguage()])||'en-IN';
-      await NativeSR.start({language:lang,maxResults:5,partialResults:true,popup:false});
-      nativeListening=true;listening=true;updateUI();
+      await NativeSR.start({language:lang,maxResults:5,partialResults:true,popup:false,allowForSilence:3000});
+      nativeListening=true; nativeStarting=false; listening=true; updateUI();
       return true;
-    }catch(e){ nativeListening=false;listening=false;updateUI();notify(`Voice could not start. ${e?.message||'Please allow microphone access.'}`);return false; }
+    }catch(e){
+      nativeStarting=false;
+      const msg=String(e?.message||e||'').toLowerCase();
+      // "already listening/on" is a harmless race, not a user-facing error.
+      if(msg.includes('already')&&msg.includes('listen')){nativeListening=true;listening=true;updateUI();return true;}
+      if(nativeWanted){setVoiceStatus('Listening…');scheduleNativeRestart(300);return true;}
+      listening=false;updateUI();notify(`Voice could not start. ${e?.message||'Please allow microphone access.'}`);return false;
+    }
   }
   async function stopNativeListening(){
-    nativeWanted=false; nativeLastTranscript='';
-    try{if(hasNativeSpeech()&&typeof NativeSR.stop==='function')await NativeSR.stop();}catch{}
+    nativeWanted=false; nativeLastTranscript=''; nativeStarting=false; clearNativeRestart();
+    try{
+      if(hasNativeSpeech()){
+        if(typeof NativeSR.forceStop==='function')await NativeSR.forceStop({timeout:1200});
+        else if(typeof NativeSR.stop==='function')await NativeSR.stop();
+      }
+    }catch(e){console.warn('[NestLedger Voice] native stop',e);}
     nativeListening=false;listening=false;updateUI();
   }
   function pageGo(page){ if(typeof global.go==='function'){global.go(page);return true;} return false; }
@@ -650,7 +710,6 @@
       listening=true;
       restarting=false;
       updateUI();
-      if(typeof global.toast==='function')global.toast((global.i18n&&global.i18n.t('voiceListening'))||'Listening…');
     };
     recognition.onaudiostart=()=>{
       const status=document.getElementById('chatbotVoiceStatus');
@@ -678,42 +737,50 @@
     recognition.onerror=e=>{
       const err=String(e.error||'').toLowerCase();
       if(err==='aborted')return;
+      if(err==='no-speech'){scheduleRestart();return;}
       if(err==='not-allowed'||err==='service-not-allowed'){
         listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceMicPermission'))||'Microphone access is blocked. Please allow it and try again.');return;
       }
       if(err==='audio-capture'){
         listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceNoMicrophone'))||'No microphone was found on this device.');return;
       }
-      // A network error is a hard failure for the browser speech service.
-      // Repeatedly restarting only leaves the UI falsely stuck on “Listening…”.
       if(err==='network'){
         listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceNetwork'))||'Voice recognition needs an internet connection.');return;
       }
-      if(err==='no-speech'){scheduleRestart();return;}
-      listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceTryAgain'))||'Please try again.');
+      // Other transient browser errors are restarted silently while the user has voice on.
+      if(listening){scheduleRestart();return;}
+      listening=false;restarting=false;updateUI();
     };
     recognition.onend=()=>{if(listening)scheduleRestart();else{restarting=false;updateUI();}};
     return recognition;
   }
 
   async function stopListening(){
-    listening=false;restarting=false;clearTimeout(restartTimer);
-    if(hasNativeSpeech()){await stopNativeListening();}
+    listening=false;restarting=false;clearTimeout(restartTimer);clearNativeRestart();
+    if(hasNativeSpeech())await stopNativeListening();
     if(recognition){try{recognition.stop();}catch{try{recognition.abort();}catch{}}}
-    if(global.speechSynthesis)global.speechSynthesis.cancel();updateUI();
+    if(global.speechSynthesis)global.speechSynthesis.cancel();
+    pendingVoiceAction=null;
+    updateUI();
   }
-
   async function startListening(){
-    if(hasNativeSpeech()) return startNativeListening();
+    // A second start request is a no-op. This is important for typed commands,
+    // button clicks, and native lifecycle events arriving close together.
+    if(listening||restarting||nativeStarting)return true;
+    if(hasNativeSpeech()) return startNativeListening(false);
     if(!SR){
       notify((global.i18n&&global.i18n.t('voiceUnsupported'))||'Voice recognition is not supported in this browser. Try Chrome or Edge for voice navigation.');
       return false;
     }
-    if(listening||restarting)return true;
     const r=recognitionInstance();
     r.lang=(global.i18n&&global.i18n.SPEECH_LOCALE&&global.i18n.SPEECH_LOCALE[global.i18n.getLanguage()])||'en-IN';
+    listening=true; updateUI();
     try{ if(global.speechSynthesis)global.speechSynthesis.cancel(); restarting=false;r.start();return true; }
-    catch(e){listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceTryAgain'))||'Please try again.');return false;}
+    catch(e){
+      const msg=String(e?.message||e||'').toLowerCase();
+      if(msg.includes('already started')||msg.includes('already running')){listening=true;updateUI();return true;}
+      listening=false;restarting=false;updateUI();notify((global.i18n&&global.i18n.t('voiceTryAgain'))||'Please try again.');return false;
+    }
   }
 
   function mountInlineMic(container){
@@ -730,22 +797,6 @@
     updateUI();
   }
 
-  function mountGlobalMic(){
-    let btn=document.getElementById('akGlobalVoiceMic');
-    if(btn)return;
-    btn=document.createElement('button');
-    btn.id='akGlobalVoiceMic';
-    btn.type='button';
-    btn.className='voice-mic ak-global-voice-mic';
-    btn.innerHTML='<span class="voice-mic-icon"><i data-lucide="mic"></i></span>';
-    btn.setAttribute('aria-label',listening?'Stop listening':((global.i18n&&global.i18n.t('voiceTapToSpeak'))||'Start listening'));
-    btn.setAttribute('title',listening?'Stop listening':'Start listening');
-    btn.onclick=()=>listening?stopListening():startListening();
-    document.body.appendChild(btn);
-    if(global.lucide&&typeof global.lucide.createIcons==='function')global.lucide.createIcons({attrs:{'stroke-width':1.8}});
-    updateUI();
-  }
-
   function refreshLabel(){
     document.querySelectorAll('.voice-mic').forEach(btn=>{
       const label=btn.querySelector('.voice-mic-label');
@@ -758,7 +809,7 @@
   function unmountMicButton(){stopListening();recognition=null;document.querySelectorAll('.voice-mic').forEach(x=>x.remove());}
 
   global.NLVoice={
-    mountInlineMic,mountGlobalMic,unmountMicButton,refreshLabel,startListening,stopListening,
+    mountInlineMic,unmountMicButton,refreshLabel,startListening,stopListening,
     supported:!!SR||hasNativeSpeech(),handleText:handleTranscript,lastTranscript:()=>lastTranscript,lastIntent:()=>lastIntent,
     isListening:()=>listening,getCommands:()=>COMMANDS.map(x=>({id:x.id,roles:x.roles||['resident','vendor','admin'],phrases:[...x.phrases]}))
   };
