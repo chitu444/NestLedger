@@ -1805,3 +1805,20 @@ html[data-theme="dark"] .apartment-seat:disabled{
 }
 html[data-theme="dark"] .apartment-seat.occupied small{color:#8f878e!important}
 
+/* Phase 3: strict-CSP-safe utility classes and readable typography. */
+.brand-accent{color:var(--accent)}
+.page-title-tight{margin-bottom:8px}
+.u-mt-8{margin-top:8px}.u-mt-6{margin-top:6px}.u-mt-18{margin-top:18px}
+.u-mb-18{margin-bottom:18px}.u-mb-8{margin-bottom:8px}.u-mb-15{margin-bottom:15px}
+.u-auto{width:auto!important}.u-text-right{text-align:right}.u-margin-0{margin:0}
+.u-title-14{font-size:14px!important;margin:4px 0 2px}.u-title-15{font-size:15px!important;margin:4px 0 2px}
+.u-rating-stars{font-size:16px!important;margin:4px 0 2px;letter-spacing:2px;color:var(--gold)}
+.perf-time{margin-top:8px;font-size:12px}
+.notice-soft{margin:10px 0 0;padding:11px 14px;background:#f4f7f4}.notice-lavender{margin:10px 0 0;padding:10px 14px;background:#eef0ff}.notice-warm{margin:10px 0 0;padding:11px 14px;background:#fff8e6}
+.pct-w-0{width:0%}.pct-w-5{width:5%}.pct-w-10{width:10%}.pct-w-15{width:15%}.pct-w-20{width:20%}.pct-w-25{width:25%}.pct-w-30{width:30%}.pct-w-35{width:35%}.pct-w-40{width:40%}.pct-w-45{width:45%}.pct-w-50{width:50%}.pct-w-55{width:55%}.pct-w-60{width:60%}.pct-w-65{width:65%}.pct-w-70{width:70%}.pct-w-75{width:75%}.pct-w-80{width:80%}.pct-w-85{width:85%}.pct-w-90{width:90%}.pct-w-95{width:95%}.pct-w-100{width:100%}
+.pct-h-0{height:0%}.pct-h-5{height:5%}.pct-h-10{height:10%}.pct-h-15{height:15%}.pct-h-20{height:20%}.pct-h-25{height:25%}.pct-h-30{height:30%}.pct-h-35{height:35%}.pct-h-40{height:40%}.pct-h-45{height:45%}.pct-h-50{height:50%}.pct-h-55{height:55%}.pct-h-60{height:60%}.pct-h-65{height:65%}.pct-h-70{height:70%}.pct-h-75{height:75%}.pct-h-80{height:80%}.pct-h-85{height:85%}.pct-h-90{height:90%}.pct-h-95{height:95%}.pct-h-100{height:100%}
+.progress-fill{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#879d77);border-radius:inherit;transform-origin:left;animation:nlProgress .9s var(--nl-ease) both}
+.star-pick{cursor:pointer;color:#dde3df}.star-pick.is-selected{color:var(--gold)}
+html[data-theme="dark"] .notice-soft{background:#302b34!important}.notice-lavender{background:#eef0ff}.notice-warm{background:#fff8e6}
+/* The application no longer relies on semantic <em> for visual italics. */
+html,body,button,input,select,textarea,h1,h2,h3,h4,h5,h6,p,span,b,strong,small,a,li,td,th,em{font-style:normal!important}

@@ -1,24 +1,19 @@
 (function () {
-  function readUser() {
-    try { return JSON.parse(localStorage.getItem('nestledgerUser') || 'null'); }
-    catch { localStorage.removeItem('nestledgerUser'); return null; }
-  }
+  // Phase 3: authentication is cookie-backed. No JWT or profile is persisted in
+  // localStorage. `token` is only an in-memory compatibility/session marker.
   const state = window.NLState = window.NLState || {
-    token: (()=>{try{return localStorage.getItem('nestledgerToken')}catch{return null}})(),
-    user: readUser(),
+    token: null,
+    user: null,
     role: 'resident',
     page: 'dashboard',
     version: 0
   };
-  state.role = state.user?.role || 'resident';
   state.bump = () => ++state.version;
   state.clearSession = () => {
-    try { localStorage.removeItem('nestledgerToken'); localStorage.removeItem('nestledgerUser'); } catch {}
     state.token = null; state.user = null; state.role = 'resident'; state.page = 'dashboard'; state.bump();
   };
   state.saveSession = (d) => {
-    state.token = d.token; state.user = d.user; state.role = d.user?.role || 'resident'; state.bump();
-    try { localStorage.setItem('nestledgerToken', d.token); localStorage.setItem('nestledgerUser', JSON.stringify(d.user)); } catch {}
+    state.token = 'cookie-session'; state.user = d.user; state.role = d.user?.role || 'resident'; state.bump();
   };
   state.can = (permission) => {
     const permissions = {

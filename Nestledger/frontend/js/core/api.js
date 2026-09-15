@@ -5,6 +5,13 @@
   const inflight = new Map();
   const lastMeta = new Map();
   let requestId = 0;
+  function csrfToken(){
+    const match=document.cookie.match(/(?:^|;\s*)csrf_access_token=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+  function makeIdempotencyKey(){
+    try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+  }
 
   function cacheKey(path) { return String(path); }
   function invalidate(prefix) {
@@ -27,7 +34,12 @@
       if (hit && hit.expires > Date.now()) return hit.data;
       if (inflight.has(key)) return inflight.get(key);
     }
-    if (window.NLState?.token) options.headers.Authorization = `Bearer ${window.NLState.token}`;
+    options.credentials = options.credentials || 'same-origin';
+    if (!isGet) {
+      const csrf=csrfToken();
+      if(csrf) options.headers['X-CSRF-TOKEN']=csrf;
+      if(!options.headers['Idempotency-Key']) options.headers['Idempotency-Key']=makeIdempotencyKey();
+    }
     const id = ++requestId;
     const controller = new AbortController();
     let timedOut = false;
@@ -36,19 +48,19 @@
       if (options.signal.aborted) controller.abort();
       else options.signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
-    // Page navigation requests share a page-level AbortController. This stops
-    // obsolete GETs when the user changes screens instead of letting old requests
-    // continue consuming browser/database resources. Explicit request signals still
-    // take precedence.
-    if (isGet && options.pageSeq != null && window.__NLPageAbortController) {
-      if (window.__NLPageAbortController.signal.aborted) controller.abort();
-      else window.__NLPageAbortController.signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
     options.signal = controller.signal;
 
     const run = (async () => {
       try {
-        const response = await fetch(API + path, options);
+        let response;
+        let attempt = 0;
+        while (true) {
+          try { response = await fetch(API + path, options); break; }
+          catch (err) {
+            if (!isGet && attempt === 0 && err instanceof TypeError && !options.signal.aborted) { attempt++; await new Promise(r=>setTimeout(r,350)); continue; }
+            throw err;
+          }
+        }
         let data = null;
         try { data = await response.json(); } catch { data = {}; }
         if (response.status === 401) {
@@ -101,21 +113,15 @@
 
   async function download(path, opt = {}) {
     const options = { ...opt, headers: { ...(opt.headers || {}) } };
-    if (window.NLState?.token) options.headers.Authorization = `Bearer ${window.NLState.token}`;
+    options.credentials = options.credentials || 'same-origin';
+    const csrf=csrfToken();
+    if(csrf) options.headers['X-CSRF-TOKEN']=csrf;
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, TIMEOUT);
     if (options.signal) {
       if (options.signal.aborted) controller.abort();
       else options.signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
-    // Page navigation requests share a page-level AbortController. This stops
-    // obsolete GETs when the user changes screens instead of letting old requests
-    // continue consuming browser/database resources. Explicit request signals still
-    // take precedence.
-    if (isGet && options.pageSeq != null && window.__NLPageAbortController) {
-      if (window.__NLPageAbortController.signal.aborted) controller.abort();
-      else window.__NLPageAbortController.signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
     options.signal = controller.signal;
     try {
