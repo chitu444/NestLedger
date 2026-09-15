@@ -29,6 +29,10 @@ from routes.work_orders import workorders_bp
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
 
+# Explicit deployment marker. Change this value for every packaged release so /health
+# can be used to verify that Vercel is serving the newly deployed backend code.
+BUILD_ID = "BI-HEALTH-CHECK-2026-09-15-01"
+
 load_dotenv(BASE_DIR / ".env")
 
 
@@ -320,8 +324,14 @@ def home():
 
 
 @app.get("/health")
+@app.get("/health/")
 def health():
-    return {"status": "ok", "build": BUILD_ID, "bi_fix": True}
+    return {
+        "status": "ok",
+        "build": BUILD_ID,
+        "bi_fix": True,
+        "service": "nestledger",
+    }
 
 
 @app.get("/api/health")
