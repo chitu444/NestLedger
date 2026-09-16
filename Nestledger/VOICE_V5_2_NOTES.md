@@ -1,8 +1,10 @@
-# NestLedger Voice v5.2
+# NestLedger Voice V5.3
 
-- One microphone only: it lives inside the AK assistant footer. No floating/global microphone is created.
-- Listening is sticky: the red mic glow remains active across browser/native recognition segments until the user says a stop command, types a stop command in AK, or clicks the AK mic.
-- Duplicate native `start()` calls are guarded; an already-running recognizer is treated as a no-op instead of surfacing an “already on/listening” error.
-- Native Android sessions use lifecycle events and `readyForNextSession` before restarting, plus `forceStop()` on manual stop.
-- Browser `no-speech`/end events restart silently while voice is enabled. Permission/network failures are shown once and turn voice off.
-- Voice transcripts remain deterministic/local and are not sent to the AI chat endpoint.
+- Exactly one microphone control exists, inside the AK assistant input row.
+- AK self-heals its microphone control for resident, vendor, and admin shells.
+- Any legacy/global/outside `.voice-mic` control is removed when AK mounts.
+- Mic layout is a stable input + mic + Send row; it cannot float outside AK.
+- Listening state remains red/glowing until the user explicitly stops listening by the AK mic or chat command.
+- Native speech lifecycle guards remain in place to prevent overlapping start calls and repeated “already listening” spam.
+- Android package includes the canonical launcher icon assets under `assets/` and the setup script regenerates native icons.
+- Vendor creation now supports one or multiple trade roles (Plumber, Electrician, Carpenter, Painter, Cleaner).

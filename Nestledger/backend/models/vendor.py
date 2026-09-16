@@ -18,6 +18,14 @@ class Vendor(db.Model):
 
     user = db.relationship("User", back_populates="vendor_profile", uselist=False, lazy="joined")
 
+    def roles(self):
+        raw = self.service or ""
+        values = [part.strip().title() for part in raw.split(",") if part.strip()]
+        if not values and self.service:
+            values = [self.service.strip().title()]
+        # Preserve order while removing duplicates.
+        return list(dict.fromkeys(values))
+
     def to_dict(self):
         # Cache rating aggregates once per request; vendor tables otherwise
         # issue one extra query for every row.
@@ -43,11 +51,14 @@ class Vendor(db.Model):
 
         average_rating, rating_count = cache.get(self.id, (None, 0))
 
+        roles = self.roles()
         return {
             "id": self.id,
             "user_id": self.user_id,
             "name": self.name,
             "service": self.service,
+            "services": roles,
+            "job_titles": roles,
             "contact": self.contact,
             "contract": self.contract,
             "status": self.status,

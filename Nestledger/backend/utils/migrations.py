@@ -398,3 +398,4 @@ def _migration_6_financial_precision():
             f"ALTER TABLE {table} ALTER COLUMN amount TYPE NUMERIC(12,2) "
             "USING ROUND(amount::numeric, 2)"
         ))
+

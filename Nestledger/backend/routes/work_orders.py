@@ -41,7 +41,10 @@ def category_job(category: str):
 
 def vendor_matches_order(vendor: Vendor, order: WorkOrder) -> bool:
     required_job = category_job(order.category)
-    return required_job is not None and (vendor.service or "").strip().lower() == required_job
+    if required_job is None:
+        return False
+    roles = vendor.roles() if hasattr(vendor, "roles") else [vendor.service]
+    return required_job in {(role or "").strip().lower() for role in roles}
 
 
 
@@ -58,12 +61,12 @@ def list_orders():
         profile = Vendor.query.filter_by(user_id=user.id, status="active").first()
         if profile is None:
             return {"work_orders": []}
-        required_job = (profile.service or "").strip().lower()
-        # Vendors see only open requests for their own job title, plus jobs
-        # already assigned to them regardless of their current status.
+        required_jobs = {(role or "").strip().lower() for role in (profile.roles() if hasattr(profile, "roles") else [profile.service])}
+        # Vendors see open requests for any assigned trade role, plus jobs already
+        # assigned to them regardless of their current status.
         matching_categories = [
             category for category, job in REQUEST_CATEGORY_TO_JOB.items()
-            if job == required_job
+            if job in required_jobs
         ]
         matching_labels = [c.title() for c in matching_categories]
         query = WorkOrder.query.filter(
@@ -248,7 +251,7 @@ def create_order():
         required_job = category_job(order.category)
         vendor_user_ids = [
             v.user_id for v in Vendor.query.filter_by(status="active").all()
-            if v.user_id and (v.service or "").strip().lower() == required_job
+            if v.user_id and required_job in {(role or "").strip().lower() for role in (v.roles() if hasattr(v, "roles") else [v.service])}
         ]
         from models.notification import notify_many
 
@@ -339,7 +342,7 @@ def withdraw_order(wid):
     required_job = category_job(order.category)
     notify_many(
         [v.user_id for v in Vendor.query.filter_by(status="active").all()
-         if v.user_id and (v.service or "").strip().lower() == required_job],
+         if v.user_id and required_job in {(role or "").strip().lower() for role in (v.roles() if hasattr(v, "roles") else [v.service])}],
         "Job Available Again",
         f"A {required_job.title()} job \"{order.title}\" is available again.",
         notif_type="work_order",

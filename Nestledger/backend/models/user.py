@@ -61,5 +61,6 @@ class User(db.Model):
             # serialization does not issue a separate query for every vendor.
             vendor = getattr(self, "vendor_profile", None)
             if vendor is not None:
-                data["job_title"] = vendor.service
+                data["job_title"] = ", ".join(vendor.roles()) if hasattr(vendor, "roles") else vendor.service
+                data["job_titles"] = vendor.roles() if hasattr(vendor, "roles") else [vendor.service]
         return data

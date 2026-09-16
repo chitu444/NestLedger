@@ -48,11 +48,36 @@
     return false;
   }
   async function send(text){text=String(text||'').trim();if(!text||busy)return;add('user',text);const s=norm(text);if(s==='start listening'||s==='begin listening'||s==='voice on'||s==='listen to me'){global.NLVoice?.startListening?.();reply('Voice control is on. I am listening. Say “stop listening” when you are finished.');return;}if(s==='stop listening'||s==='voice off'||s==='turn off voice'||s==='pause listening'){global.NLVoice?.stopListening?.();reply('Voice control is off.');return;}if(global.NLVoice?.handleText?.(text)){return;}if(local(s))return;busy=true;const btn=document.getElementById('akSend');if(btn)btn.disabled=true;try{const d=await api('/ai/chat',{method:'POST',body:JSON.stringify({message:text,lang:global.i18n?.getLanguage?.()||'en',history:[]})});if(d?.action?.target&&ALLOWED.has(d.action.target)){go(d.action.target);}reply(d?.reply||'I could not find an answer for that. Try asking me to open a section or show your current records.');}catch(e){reply(`I couldn't reach the assistant service. ${e?.message||'Please try again.'}`);}finally{busy=false;if(btn)btn.disabled=false;document.getElementById('akInput')?.focus();}}
-  function mount(){if(document.getElementById('akFab'))return;const fab=document.createElement('button');fab.id='akFab';fab.className='chatbot-fab';fab.type='button';fab.setAttribute('aria-label','Open AK community assistant');fab.title='AK — Community Assistant';fab.innerHTML=`<span class="chatbot-fab-icon">${icon()}</span>`;fab.onclick=toggle;document.body.appendChild(fab);
+  function cleanupVoiceButtons(){
+    document.querySelectorAll('.voice-mic').forEach(btn=>{
+      if(!document.getElementById('akForm')?.contains(btn) || btn.id!=='chatbotVoiceMic')btn.remove();
+    });
+    document.querySelectorAll('.ak-global-voice-mic,#akGlobalVoiceMic,#akGlobalVoiceMic').forEach(el=>el.remove());
+  }
+  function wireAkPanel(){
+    const form=document.getElementById('akForm');
+    if(!form)return;
+    cleanupVoiceButtons();
+    if(global.NLVoice?.mountInlineMic)global.NLVoice.mountInlineMic(form);
+    document.getElementById('akClose')?.addEventListener('click',close);
+    document.getElementById('akClear')?.addEventListener('click',clear);
+    if(!form.dataset.bound){
+      form.dataset.bound='1';
+      form.onsubmit=e=>{e.preventDefault();const i=document.getElementById('akInput');const v=i.value.trim();if(v){i.value='';send(v);}};
+    }
+    renderSuggestions();
+  }
+  function mount(){
+    cleanupVoiceButtons();
+    const existing=document.getElementById('akPanel');
+    if(existing){
+      wireAkPanel();
+      return;
+    }
+    const fab=document.createElement('button');fab.id='akFab';fab.className='chatbot-fab';fab.type='button';fab.setAttribute('aria-label','Open AK community assistant');fab.title='AK — Community Assistant';fab.innerHTML=`<span class="chatbot-fab-icon">${icon()}</span>`;fab.onclick=toggle;document.body.appendChild(fab);
     const panel=document.createElement('section');panel.id='akPanel';panel.className='chatbot-panel';panel.innerHTML=`<header class="ak-header"><div class="ak-head-main"><div class="ak-avatar">${icon()}</div><div><strong>AK · Community Assistant</strong><small>NestLedger command center</small></div></div><div class="ak-actions"><button id="akClear" type="button" aria-label="Clear chat" title="Clear chat">⌫</button><button id="akClose" type="button" aria-label="Close assistant" title="Close">×</button></div></header><div class="ak-suggestions" id="akSuggestions"></div><div class="ak-body" id="akBody"></div><form class="ak-footer" id="akForm"><div class="ak-input-row"><input id="akInput" autocomplete="off" placeholder="Ask AK or say a command…"><button id="chatbotVoiceMic" class="voice-mic chatbot-voice-mic" type="button" aria-label="Start listening" title="Start listening"><span class="voice-mic-icon"><i data-lucide="mic"></i></span></button><button id="akSend" type="submit">Send</button></div><div class="chatbot-voice-status" id="chatbotVoiceStatus" data-state="off" aria-live="polite">Voice off</div></form>`;document.body.appendChild(panel);
-    if(global.NLVoice?.mountInlineMic)global.NLVoice.mountInlineMic(document.getElementById('akForm'));
-
-    document.getElementById('akClose').onclick=close;document.getElementById('akClear').onclick=clear;document.getElementById('akForm').onsubmit=e=>{e.preventDefault();const i=document.getElementById('akInput');const v=i.value.trim();if(v){i.value='';send(v);}};renderSuggestions();reply('Hi! I’m AK. I can help you navigate NestLedger and understand what is happening in your community.');
+    wireAkPanel();
+    reply('Hi! I’m AK. I can help you navigate NestLedger and understand what is happening in your community.');
   }
   function openChat(){open=true;document.getElementById('akPanel')?.classList.add('open');document.getElementById('akInput')?.focus();}
   function close(){open=false;document.getElementById('akPanel')?.classList.remove('open');}

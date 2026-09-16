@@ -27,6 +27,7 @@ Run the migration command against the same `DATABASE_URL` used by production bef
 - **9 — enforce_financial_logical_uniqueness:** enforces one maintenance bill per resident/month and one successful payment per bill/work order.
 - **10 — enforce_data_domain_constraints:** enforces non-negative financial amounts and rating values from 1 through 5 on PostgreSQL.
 - **11 — add_auth_rate_limit:** creates the database-backed sign-in throttling state.
+- **12 — repair_integer_primary_key_generation:** repairs PostgreSQL identity generation for migration-created integer primary keys.
 
 Migrations are additive and deliberately fail with a clear error when existing data is ambiguous in a way that would make a new constraint unsafe. They do not silently delete residents or financial records.
 

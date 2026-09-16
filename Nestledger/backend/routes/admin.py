@@ -65,8 +65,8 @@ def _export_rows(resource):
             like = f"%{q}%"
             query = query.filter(or_(Vendor.name.ilike(like), Vendor.service.ilike(like), Vendor.contact.ilike(like)))
         rows = query.order_by(Vendor.id.desc()).all()
-        return ["ID", "Name", "Service", "Contact", "Contract", "Status"], [
-            [v.id, v.name, v.service, v.contact, v.contract or "", v.status] for v in rows
+        return ["ID", "Name", "Service Roles", "Contact", "Contract", "Status"], [
+            [v.id, v.name, ", ".join(v.roles()) if hasattr(v, "roles") else v.service, v.contact, v.contract or "", v.status] for v in rows
         ], "nestledger_vendors"
 
     if resource == "expenses":
@@ -337,7 +337,14 @@ def add_vendor():
     name = str(data.get("name", "")).strip()
     email = str(data.get("email", "")).strip().lower()
     password = str(data.get("password", ""))
-    job_title = str(data.get("job_title", data.get("service", ""))).strip().lower()
+    raw_roles = data.get("job_titles", data.get("job_title", data.get("service", "")))
+    if isinstance(raw_roles, str):
+        requested_roles = [part.strip().lower() for part in raw_roles.split(",") if part.strip()]
+    elif isinstance(raw_roles, (list, tuple, set)):
+        requested_roles = [str(part).strip().lower() for part in raw_roles if str(part).strip()]
+    else:
+        requested_roles = []
+    job_titles = list(dict.fromkeys(requested_roles))
     contact = str(data.get("contact", "")).strip()
     contract = str(data.get("contract", "")).strip() or None
 
@@ -353,8 +360,8 @@ def add_vendor():
     ok, err = valid_phone(contact, required=True)
     if not ok:
         return {"error": err}, 400
-    if job_title not in VENDOR_JOB_TITLES:
-        return {"error": "Job title must be one of: Plumber, Electrician, Carpenter, Painter, Cleaner"}, 400
+    if not job_titles or any(job not in VENDOR_JOB_TITLES for job in job_titles):
+        return {"error": "Choose one or more valid roles: Plumber, Electrician, Carpenter, Painter, Cleaner"}, 400
     lock_fingerprint(f"vendor-create:{email}")
     if User.query.filter_by(email=email).first():
         return {"error": "Email already registered"}, 409
@@ -367,7 +374,7 @@ def add_vendor():
     vendor = Vendor(
         user_id=user.id,
         name=name,
-        service=job_title.title(),
+        service=", ".join(job.title() for job in job_titles),
         contact=contact,
         contract=contract,
         status="active",
