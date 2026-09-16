@@ -5,6 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask, current_app, g, jsonify, request, send_from_directory
 from flask_cors import CORS
+from utils.concurrency import lock_fingerprint
 from flask_jwt_extended import JWTManager, set_access_cookies, unset_jwt_cookies
 from flask_jwt_extended.exceptions import CSRFError
 from sqlalchemy import text
