@@ -299,9 +299,23 @@
       await plugin.addListener('error',e=>{
         console.warn('[NestLedger Voice] native recognition error',e);
         nativeListening=false; nativeStarting=false;
-        // Errors such as no match / silence are recoverable while the user
-        // still wants voice on. Do not toast every native recognition event.
+        const code=String(e?.errorCode||e?.code||e?.error||e?.message||'').toLowerCase();
+        const permanent=/permission|not.?allowed|service.?unavailable|recognition.?unavailable|audio.?capture/.test(code);
+        if(permanent){
+          nativeWanted=false; listening=false; clearNativeRestart(); updateUI();
+          const msg=/permission|not.?allowed/.test(code)
+            ? ((global.i18n&&global.i18n.t('voiceMicPermission'))||'Microphone access is blocked. Please allow it and try again.')
+            : 'Voice recognition is not available right now on this device.';
+          notify(msg);
+          return;
+        }
+        // Silence/no-match/transient recognizer errors are recoverable while the user
+        // still wants voice on. Restart silently without toast spam.
         if(nativeWanted){setVoiceStatus('Listening…');scheduleNativeRestart(180);}
+      });
+      await plugin.addListener('endOfSegmentedSession',()=>{
+        nativeStarting=false;
+        if(nativeWanted)scheduleNativeRestart(80);
       });
       await plugin.addListener('readyForNextSession',()=>{
         nativeStarting=false;
@@ -377,8 +391,10 @@
     nativeWanted=false; nativeStarting=false; clearNativeRestart();
     try{
       if(plugin){
-        if(typeof plugin.forceStop==='function')await plugin.forceStop({timeout:1200});
-        else if(typeof plugin.stop==='function')await plugin.stop();
+        if(typeof plugin.forceStop==='function'){
+          try{await plugin.forceStop({timeout:1200});}
+          catch{if(typeof plugin.stop==='function')await plugin.stop();}
+        }else if(typeof plugin.stop==='function')await plugin.stop();
       }
     }catch(e){console.warn('[NestLedger Voice] native stop',e);}
     nativeLastTranscript='';
@@ -817,13 +833,26 @@
 
   function mountInlineMic(container){
     const wrap=typeof container==='string'?document.querySelector(container):container;if(!wrap)return;
-    let btn=wrap.querySelector('#chatbotVoiceMic');
+    const row=wrap.querySelector('.ak-input-row')||wrap;
+    // Always normalize the microphone into the dedicated AK input row. Older
+    // deployments could leave the button directly under the form, which made
+    // it visually drop below Send after a remount. Moving the existing node is
+    // intentional and keeps one, shared microphone for every role.
+    let btn=row.querySelector('#chatbotVoiceMic')||wrap.querySelector('#chatbotVoiceMic');
     if(!btn){
       btn=document.createElement('button');btn.id='chatbotVoiceMic';btn.type='button';btn.className='voice-mic chatbot-voice-mic';
-      btn.innerHTML='<span class="voice-mic-icon"><i data-lucide="mic"></i></span><span class="voice-mic-label"></span>';wrap.appendChild(btn);
-      if(global.lucide&&typeof global.lucide.createIcons==='function')global.lucide.createIcons({attrs:{'stroke-width':1.8}});
+      btn.innerHTML='<span class="voice-mic-icon"><i data-lucide="mic"></i></span><span class="voice-mic-label"></span>';
     }
+    if(btn.parentElement!==row)row.appendChild(btn);
+    // Deterministically enforce input -> mic -> send order regardless of which
+    // role or cached DOM version created the assistant first.
+    const input=row.querySelector('#akInput');
+    const send=row.querySelector('#akSend');
+    if(input)row.insertBefore(input,btn);
+    if(send)row.appendChild(send);
+    if(global.lucide&&typeof global.lucide.createIcons==='function')global.lucide.createIcons({attrs:{'stroke-width':1.8}});
     btn.onclick=()=>listening?stopListening():startListening();
+    btn.setAttribute('aria-pressed',String(listening));
     btn.setAttribute('aria-label',listening?'Stop listening':((global.i18n&&global.i18n.t('voiceTapToSpeak'))||'Speak'));
     btn.setAttribute('title',listening?'Stop listening':((global.i18n&&global.i18n.t('voiceTapToSpeak'))||'Speak'));
     updateUI();

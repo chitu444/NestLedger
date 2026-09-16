@@ -53,13 +53,41 @@
     document.querySelectorAll('.voice-mic').forEach(btn=>{
       if(!form?.contains(btn) || btn.id!=='chatbotVoiceMic')btn.remove();
     });
-    document.querySelectorAll('.ak-global-voice-mic,#akGlobalVoiceMic').forEach(el=>el.remove());
+  }
+  function syncAkTheme(){
+    const panel=document.getElementById('akPanel');
+    if(!panel)return;
+    const dark=document.documentElement?.dataset?.theme==='dark';
+    panel.classList.toggle('ak-theme-dark',dark);
+    panel.classList.toggle('ak-theme-light',!dark);
+  }
+  function normalizeMicRow(){
+    const form=document.getElementById('akForm');
+    const row=form?.querySelector('.ak-input-row');
+    if(!row)return;
+    const input=row.querySelector('#akInput');
+    const mic=row.querySelector('#chatbotVoiceMic');
+    const send=row.querySelector('#akSend');
+    if(input && mic)row.insertBefore(input,mic);
+    if(mic && send)row.insertBefore(mic,send);
+    if(send && send.parentElement!==row)row.appendChild(send);
+  }
+  function watchAkTheme(){
+    if(window.__nlAkThemeObserver)return;
+    const root=document.documentElement;
+    const observer=new MutationObserver(syncAkTheme);
+    observer.observe(root,{attributes:true,attributeFilter:['data-theme']});
+    window.__nlAkThemeObserver=observer;
   }
   function wireAkPanel(){
     const form=document.getElementById('akForm');
     if(!form)return;
     cleanupVoiceButtons();
+    normalizeMicRow();
     if(global.NLVoice?.mountInlineMic)global.NLVoice.mountInlineMic(form);
+    normalizeMicRow();
+    syncAkTheme();
+    watchAkTheme();
     document.getElementById('akClose')?.addEventListener('click',close);
     document.getElementById('akClear')?.addEventListener('click',clear);
     if(!form.dataset.bound){
@@ -78,9 +106,11 @@
     const fab=document.createElement('button');fab.id='akFab';fab.className='chatbot-fab';fab.type='button';fab.setAttribute('aria-label','Open AK community assistant');fab.title='AK — Community Assistant';fab.innerHTML=`<span class="chatbot-fab-icon">${icon()}</span>`;fab.onclick=toggle;document.body.appendChild(fab);
     const panel=document.createElement('section');panel.id='akPanel';panel.className='chatbot-panel';panel.innerHTML=`<header class="ak-header"><div class="ak-head-main"><div class="ak-avatar">${icon()}</div><div><strong>AK · Community Assistant</strong><small>NestLedger command center</small></div></div><div class="ak-actions"><button id="akClear" type="button" aria-label="Clear chat" title="Clear chat">⌫</button><button id="akClose" type="button" aria-label="Close assistant" title="Close">×</button></div></header><div class="ak-suggestions" id="akSuggestions"></div><div class="ak-body" id="akBody"></div><form class="ak-footer" id="akForm"><div class="ak-input-row"><input id="akInput" autocomplete="off" placeholder="Ask AK or say a command…"><button id="chatbotVoiceMic" class="voice-mic chatbot-voice-mic" type="button" aria-label="Start listening" title="Start listening"><span class="voice-mic-icon"><i data-lucide="mic"></i></span></button><button id="akSend" type="submit">Send</button></div><div class="chatbot-voice-status" id="chatbotVoiceStatus" data-state="off" aria-live="polite">Voice off</div></form>`;document.body.appendChild(panel);
     wireAkPanel();
+    syncAkTheme();
+    watchAkTheme();
     reply('Hi! I’m AK. I can help you navigate NestLedger and understand what is happening in your community.');
   }
-  function openChat(){open=true;document.getElementById('akPanel')?.classList.add('open');document.getElementById('akInput')?.focus();}
+  function openChat(){open=true;syncAkTheme();normalizeMicRow();document.getElementById('akPanel')?.classList.add('open');document.getElementById('akInput')?.focus();}
   function close(){open=false;document.getElementById('akPanel')?.classList.remove('open');}
   function toggle(){open?close():openChat();}
   function clear(){const b=document.getElementById('akBody');if(b)b.innerHTML='';reply('Chat cleared. What would you like AK to help with?');renderSuggestions();}
