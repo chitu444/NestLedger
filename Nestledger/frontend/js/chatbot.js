@@ -49,10 +49,11 @@
   }
   async function send(text){text=String(text||'').trim();if(!text||busy)return;add('user',text);const s=norm(text);if(s==='start listening'||s==='begin listening'||s==='voice on'||s==='listen to me'){global.NLVoice?.startListening?.();reply('Voice control is on. I am listening. Say “stop listening” when you are finished.');return;}if(s==='stop listening'||s==='voice off'||s==='turn off voice'||s==='pause listening'){global.NLVoice?.stopListening?.();reply('Voice control is off.');return;}if(global.NLVoice?.handleText?.(text)){return;}if(local(s))return;busy=true;const btn=document.getElementById('akSend');if(btn)btn.disabled=true;try{const d=await api('/ai/chat',{method:'POST',body:JSON.stringify({message:text,lang:global.i18n?.getLanguage?.()||'en',history:[]})});if(d?.action?.target&&ALLOWED.has(d.action.target)){go(d.action.target);}reply(d?.reply||'I could not find an answer for that. Try asking me to open a section or show your current records.');}catch(e){reply(`I couldn't reach the assistant service. ${e?.message||'Please try again.'}`);}finally{busy=false;if(btn)btn.disabled=false;document.getElementById('akInput')?.focus();}}
   function cleanupVoiceButtons(){
+    const form=document.getElementById('akForm');
     document.querySelectorAll('.voice-mic').forEach(btn=>{
-      if(!document.getElementById('akForm')?.contains(btn) || btn.id!=='chatbotVoiceMic')btn.remove();
+      if(!form?.contains(btn) || btn.id!=='chatbotVoiceMic')btn.remove();
     });
-    document.querySelectorAll('.ak-global-voice-mic,#akGlobalVoiceMic,#akGlobalVoiceMic').forEach(el=>el.remove());
+    document.querySelectorAll('.ak-global-voice-mic,#akGlobalVoiceMic').forEach(el=>el.remove());
   }
   function wireAkPanel(){
     const form=document.getElementById('akForm');

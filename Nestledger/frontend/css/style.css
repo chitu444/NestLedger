@@ -1880,16 +1880,24 @@ html[data-theme="dark"] .chatbot-voice-mic.listening{background:#251c1e!importan
 /* Voice V5.3 — AK-only microphone layout. The microphone is always a member of
    the AK input row; no fixed/floating voice button is allowed outside the assistant. */
 .ak-footer{box-sizing:border-box!important;width:100%!important;display:block!important;padding:10px!important}
-.ak-input-row{display:grid!important;grid-template-columns:minmax(0,1fr) 42px auto!important;align-items:center!important;gap:8px!important;width:100%!important}
-.ak-input-row #akInput{width:100%!important;box-sizing:border-box!important;min-height:42px!important}
-.ak-input-row .chatbot-voice-mic{position:static!important;inset:auto!important;width:42px!important;height:42px!important;min-width:42px!important;max-width:42px!important;margin:0!important;padding:0!important;align-self:center!important;justify-self:center!important;display:grid!important;place-items:center!important;z-index:1!important}
-.ak-input-row #akSend{height:42px!important;min-width:62px!important;margin:0!important;padding:0 14px!important;align-self:center!important}
+.ak-input-row{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center!important;gap:8px!important;width:100%!important;min-width:0!important}
+.ak-input-row #akInput{display:block!important;flex:1 1 auto!important;width:auto!important;min-width:0!important;box-sizing:border-box!important;height:42px!important;min-height:42px!important}
+.ak-input-row > #chatbotVoiceMic,.ak-input-row .chatbot-voice-mic{position:static!important;inset:auto!important;order:2!important;flex:0 0 42px!important;width:42px!important;height:42px!important;min-width:42px!important;max-width:42px!important;margin:0!important;padding:0!important;align-self:center!important;display:grid!important;place-items:center!important;z-index:1!important}
+.ak-input-row > #akSend,.ak-input-row #akSend{order:3!important;flex:0 0 auto!important;height:42px!important;min-width:62px!important;margin:0!important;padding:0 14px!important;align-self:center!important;white-space:nowrap!important}
+.ak-input-row > #akInput{order:1!important}
 .ak-footer .chatbot-voice-mic.listening{animation:nlVoiceGlow 1.15s ease-in-out infinite!important}
-@media(max-width:420px){.ak-input-row{grid-template-columns:minmax(0,1fr) 40px 56px!important;gap:6px!important}.ak-input-row .chatbot-voice-mic{width:40px!important;height:40px!important;min-width:40px!important;max-width:40px!important}.ak-input-row #akSend{min-width:56px!important;padding:0 10px!important}}
+@media(max-width:420px){.ak-input-row{gap:6px!important}.ak-input-row > #chatbotVoiceMic,.ak-input-row .chatbot-voice-mic{flex-basis:40px!important;width:40px!important;height:40px!important;min-width:40px!important;max-width:40px!important}.ak-input-row > #akSend,.ak-input-row #akSend{min-width:56px!important;padding:0 10px!important}}
 
 /* Vendor role selector: one or many trade roles, touch-friendly on web and Android. */
 .vendor-role-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .vendor-role-option{display:flex;align-items:center;gap:8px;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface,#fff);color:var(--ink);cursor:pointer;font-weight:600}
 .vendor-role-option input{width:16px;height:16px;accent-color:var(--accent);margin:0}
 .vendor-role-option:has(input:checked){border-color:var(--accent);background:var(--accent2);box-shadow:0 0 0 1px var(--accent)}
+html[data-theme="dark"] .vendor-role-grid .vendor-role-option{background:#332d35!important;color:#eee7dc!important;border-color:#5a505d!important}
+html[data-theme="dark"] .vendor-role-grid .vendor-role-option span{color:#eee7dc!important}
+html[data-theme="dark"] .vendor-role-grid .vendor-role-option:hover{background:#403744!important;border-color:#756681!important}
+html[data-theme="dark"] .vendor-role-grid .vendor-role-option:has(input:checked){background:#493d53!important;color:#ded1ef!important;border-color:#806d93!important;box-shadow:0 0 0 1px #b7a5df!important}
+html[data-theme="dark"] .vendor-role-grid .vendor-role-option:has(input:checked) span{color:#ded1ef!important}
+html[data-theme="dark"] .vendor-role-grid .vendor-role-option input{accent-color:#b7a5df}
+html[data-theme="dark"] #vendorRoleHelp{color:#c2b7aa!important}
 @media(max-width:520px){.vendor-role-grid{grid-template-columns:1fr}}

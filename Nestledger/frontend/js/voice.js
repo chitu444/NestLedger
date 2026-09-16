@@ -6,9 +6,13 @@
   'use strict';
 
   const SR = global.SpeechRecognition || global.webkitSpeechRecognition;
-  // Android/Capacitor uses a native recognizer when available; desktop/mobile web
-  // falls back to the Web Speech API. Voice is NEVER started automatically.
-  const NativeSR = global.Capacitor?.Plugins?.SpeechRecognition || null;
+  // Android/Capacitor uses the native recognizer when the bridge exposes it; web
+  // falls back to Web Speech where the browser supports speech recognition.
+  let NativeSR = null;
+  function resolveNativeSpeech(){
+    NativeSR = global.Capacitor?.Plugins?.SpeechRecognition || NativeSR || null;
+    return NativeSR;
+  }
   let nativeListening = false;
   let nativeWanted = false;
   let nativeListenersReady = false;
@@ -201,7 +205,7 @@
     return bestScore>=58?best:null;
   }
 
-  function hasNativeSpeech(){ return !!(NativeSR && typeof NativeSR.start==='function'); }
+  function hasNativeSpeech(){ const plugin=resolveNativeSpeech(); return !!(plugin && typeof plugin.start==='function'); }
   function fieldText(el){
     return normalize(el?.getAttribute('aria-label')||el?.name||el?.id||el?.placeholder||el?.closest('.field')?.querySelector('label')?.innerText||'');
   }
@@ -265,46 +269,51 @@
   }
   function clearNativeRestart(){clearTimeout(nativeRestartTimer);nativeRestartTimer=null;}
   async function setupNativeSpeech(){
-    if(!hasNativeSpeech() || nativeListenersReady)return;
-    nativeListenersReady=true;
+    const plugin=resolveNativeSpeech();
+    if(!plugin || typeof plugin.start!=='function')return false;
+    if(nativeListenersReady)return true;
     try{
-      await NativeSR.addListener('partialResults',e=>{
-        const text=String(e?.matches?.[0]||'').trim();
+      await plugin.addListener('partialResults',e=>{
+        const text=String(e?.matches?.[0]||e?.accumulatedText||'').trim();
         if(text){nativeLastTranscript=text;setVoiceStatus(`Heard: ${text}`);}
       });
-      if(typeof NativeSR.addListener==='function'){
-        await NativeSR.addListener('segmentResults',e=>{
-          const text=String(e?.matches?.[0]||e?.text||'').trim();
-          if(text){nativeLastTranscript='';handleTranscript(text);}
-        });
-        await NativeSR.addListener('listeningState',e=>{
-          const state=String(e?.state||'').toLowerCase();
-          const active=state==='started'||state==='startinglistening'||e?.status==='started';
-          const stopped=state==='stopped'||state==='stoppinglistening'||e?.status==='stopped';
-          if(active){
-            nativeListening=true; listening=true; nativeStarting=false; clearNativeRestart(); updateUI(); return;
-          }
-          if(stopped){
-            nativeListening=false; nativeStarting=false;
-            const text=nativeLastTranscript.trim(); nativeLastTranscript='';
-            if(text && nativeWanted)handleTranscript(text);
-            if(nativeWanted){setVoiceStatus('Listening…');scheduleNativeRestart();}
-            else{listening=false;updateUI();}
-          }
-        });
-        await NativeSR.addListener('error',e=>{
-          // Native recognizers can report segment-level errors while the session is still
-          // recoverable. Do not toast on every error; wait for the ready event/restart path.
-          console.warn('[NestLedger Voice] native recognition error',e);
+      await plugin.addListener('segmentResults',e=>{
+        const text=String(e?.matches?.[0]||e?.text||'').trim();
+        if(text){nativeLastTranscript='';handleTranscript(text);}
+      });
+      await plugin.addListener('listeningState',e=>{
+        const state=String(e?.state||'').toLowerCase();
+        const active=state==='started'||state==='startinglistening'||e?.status==='started';
+        const stopped=state==='stopped'||state==='stoppinglistening'||e?.status==='stopped';
+        if(active){
+          nativeListening=true; listening=true; nativeStarting=false; clearNativeRestart(); updateUI(); return;
+        }
+        if(stopped){
           nativeListening=false; nativeStarting=false;
-          if(nativeWanted){setVoiceStatus('Listening…');scheduleNativeRestart();}
-        });
-        await NativeSR.addListener('readyForNextSession',()=>{
-          nativeStarting=false;
-          if(nativeWanted)scheduleNativeRestart(80);
-        });
-      }
-    }catch(e){ console.warn('Native speech listeners unavailable',e); }
+          const text=nativeLastTranscript.trim(); nativeLastTranscript='';
+          if(text && nativeWanted)handleTranscript(text);
+          if(nativeWanted){setVoiceStatus('Listening…');scheduleNativeRestart(100);}
+          else{listening=false;updateUI();}
+        }
+      });
+      await plugin.addListener('error',e=>{
+        console.warn('[NestLedger Voice] native recognition error',e);
+        nativeListening=false; nativeStarting=false;
+        // Errors such as no match / silence are recoverable while the user
+        // still wants voice on. Do not toast every native recognition event.
+        if(nativeWanted){setVoiceStatus('Listening…');scheduleNativeRestart(180);}
+      });
+      await plugin.addListener('readyForNextSession',()=>{
+        nativeStarting=false;
+        if(nativeWanted)scheduleNativeRestart(80);
+      });
+      nativeListenersReady=true;
+      return true;
+    }catch(e){
+      nativeListenersReady=false;
+      console.warn('[NestLedger Voice] native speech listeners unavailable',e);
+      return false;
+    }
   }
   function scheduleNativeRestart(delay=120){
     if(!nativeWanted||nativeStarting)return;
@@ -316,51 +325,73 @@
     },delay);
   }
   async function startNativeListening(isRestart=false){
-    if(!hasNativeSpeech())return false;
+    const plugin=resolveNativeSpeech();
+    if(!plugin || typeof plugin.start!=='function')return false;
     if(nativeStarting)return true;
-    await setupNativeSpeech();
+    const listenersOk=await setupNativeSpeech();
+    if(!listenersOk)return false;
     nativeWanted=true;
-    // Never call start() twice on an already-running native recognizer.
     try{
-      if(typeof NativeSR.isListening==='function'){
-        const state=await NativeSR.isListening();
-        if(state?.isListening||state?.listening||state===true){
+      if(typeof plugin.available==='function'){
+        const available=await plugin.available();
+        if(available?.available===false){
+          nativeWanted=false; listening=false; updateUI();
+          notify('Native voice recognition is not available on this Android device.');
+          return false;
+        }
+      }
+      if(typeof plugin.isListening==='function'){
+        const state=await plugin.isListening();
+        if(state?.isListening||state?.listening===true||state===true){
           nativeListening=true; listening=true; updateUI(); return true;
         }
       }
-      const perm=await NativeSR.checkPermissions?.();
-      if(perm?.recordAudio==='denied'){
-        const granted=await NativeSR.requestPermissions();
-        if(granted?.recordAudio==='denied'){nativeWanted=false;listening=false;updateUI();notify((global.i18n&&global.i18n.t('voiceMicPermission'))||'Microphone access is blocked. Please allow it and try again.');return false;}
+      if(typeof plugin.checkPermissions==='function'){
+        let perm=await plugin.checkPermissions();
+        let speech=perm?.speechRecognition||perm?.recordAudio;
+        if(speech!=='granted' && typeof plugin.requestPermissions==='function'){
+          perm=await plugin.requestPermissions();
+          speech=perm?.speechRecognition||perm?.recordAudio;
+        }
+        if(speech==='denied'){
+          nativeWanted=false; listening=false; updateUI();
+          notify((global.i18n&&global.i18n.t('voiceMicPermission'))||'Microphone access is blocked. Please allow it and try again.');
+          return false;
+        }
       }
       nativeStarting=true; listening=true; updateUI();
       const lang=(global.i18n&&global.i18n.SPEECH_LOCALE&&global.i18n.SPEECH_LOCALE[global.i18n.getLanguage()])||'en-IN';
-      await NativeSR.start({language:lang,maxResults:5,partialResults:true,popup:false,allowForSilence:3000});
+      await plugin.start({language:lang,maxResults:5,partialResults:true,popup:false,allowForSilence:3000});
       nativeListening=true; nativeStarting=false; listening=true; updateUI();
       return true;
     }catch(e){
       nativeStarting=false;
       const msg=String(e?.message||e||'').toLowerCase();
-      // "already listening/on" is a harmless race, not a user-facing error.
       if(msg.includes('already')&&msg.includes('listen')){nativeListening=true;listening=true;updateUI();return true;}
       if(nativeWanted){setVoiceStatus('Listening…');scheduleNativeRestart(300);return true;}
       listening=false;updateUI();notify(`Voice could not start. ${e?.message||'Please allow microphone access.'}`);return false;
     }
   }
   async function stopNativeListening(){
-    nativeWanted=false; nativeLastTranscript=''; nativeStarting=false; clearNativeRestart();
+    const plugin=resolveNativeSpeech();
+    nativeWanted=false; nativeStarting=false; clearNativeRestart();
     try{
-      if(hasNativeSpeech()){
-        if(typeof NativeSR.forceStop==='function')await NativeSR.forceStop({timeout:1200});
-        else if(typeof NativeSR.stop==='function')await NativeSR.stop();
+      if(plugin){
+        if(typeof plugin.forceStop==='function')await plugin.forceStop({timeout:1200});
+        else if(typeof plugin.stop==='function')await plugin.stop();
       }
     }catch(e){console.warn('[NestLedger Voice] native stop',e);}
+    nativeLastTranscript='';
     nativeListening=false;listening=false;updateUI();
   }
   function pageGo(page){ if(typeof global.go==='function'){global.go(page);return true;} return false; }
 
   function speak(text){
     if(!global.speechSynthesis||!text)return;
+    // Never let AK's own spoken response become a new voice command. The
+    // recognition session remains user-controlled; while it is active, visual
+    // feedback is used instead of feeding TTS back into the microphone.
+    if(listening)return;
     const lang=(global.i18n&&global.i18n.SPEECH_LOCALE&&global.i18n.SPEECH_LOCALE[global.i18n.getLanguage()])||'en-IN';
     const u=new SpeechSynthesisUtterance(text);u.lang=lang;global.speechSynthesis.cancel();global.speechSynthesis.speak(u);
   }
@@ -769,7 +800,8 @@
     if(listening||restarting||nativeStarting)return true;
     if(hasNativeSpeech()) return startNativeListening(false);
     if(!SR){
-      notify((global.i18n&&global.i18n.t('voiceUnsupported'))||'Voice recognition is not supported in this browser. Try Chrome or Edge for voice navigation.');
+      const secure=global.isSecureContext!==false;
+      notify(secure?'Voice recognition is not available in this browser. Please use Chrome or Edge for web voice commands.':'Voice recognition requires a secure HTTPS connection.');
       return false;
     }
     const r=recognitionInstance();
